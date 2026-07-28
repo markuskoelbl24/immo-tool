@@ -571,13 +571,30 @@ function b64(str){
 }
 function unb64(s){ return new TextDecoder().decode(Uint8Array.from(atob(s),c=>c.charCodeAt(0))); }
 
+function ghKopf(){ const c=syncCfg();
+  return {Authorization:"token "+c.token, Accept:"application/vnd.github+json"}; }
+
+/* Klartext statt Statuscode — sonst sucht man den Fehler an der falschen Stelle. */
+function ghFehler(status){
+  if(status===401) return "Token ungültig oder abgelaufen";
+  if(status===403) return "Token hat keine Schreibrechte für dieses Repo (Contents: Read and write)";
+  if(status===409||status===422) return "Stand im Repo hat sich geändert — nochmal versuchen";
+  return "Fehler "+status;
+}
+
 async function ghGet(){
   const c=syncCfg(), [owner,repo]=c.repo.split("/");
   const url=`https://api.github.com/repos/${owner}/${repo}/contents/${encodeURIComponent(c.path)}`+
             `?ref=${encodeURIComponent(c.branch)}&_=${Date.now()}`;
-  const r=await fetch(url,{headers:{Authorization:"token "+c.token,Accept:"application/vnd.github+json"}});
-  if(r.status===404) return {data:null,sha:null};
-  if(!r.ok) throw new Error("Lesen "+r.status);
+  const r=await fetch(url,{headers:ghKopf()});
+  if(r.status===404){
+    // 404 heißt entweder „Datei noch nicht da" oder „Repo gibt es nicht" — das ist ein
+    // großer Unterschied: sonst legt der nächste Schreibversuch die Datei irgendwo an.
+    const rr=await fetch(`https://api.github.com/repos/${owner}/${repo}`,{headers:ghKopf()});
+    if(!rr.ok) throw new Error(`Repo „${c.repo}“ nicht gefunden oder kein Zugriff — Schreibweise besitzer/name prüfen`);
+    return {data:null,sha:null};              // Repo da, Datei wird beim ersten Schreiben angelegt
+  }
+  if(!r.ok) throw new Error("Lesen: "+ghFehler(r.status));
   const j=await r.json();
   return {data:JSON.parse(unb64((j.content||"").replace(/\n/g,""))),sha:j.sha};
 }
@@ -587,9 +604,10 @@ async function ghPut(data,sha){
   const body={message:"Objektrechner "+new Date().toISOString().slice(0,16).replace("T"," "),
               content:b64(JSON.stringify(data,null,2)),branch:c.branch};
   if(sha) body.sha=sha;
-  const r=await fetch(url,{method:"PUT",headers:{Authorization:"token "+c.token,
-    Accept:"application/vnd.github+json","Content-Type":"application/json"},body:JSON.stringify(body)});
-  if(!r.ok) throw new Error("Schreiben "+r.status);
+  const r=await fetch(url,{method:"PUT",headers:{...ghKopf(),"Content-Type":"application/json"},
+    body:JSON.stringify(body)});
+  if(!r.ok) throw new Error("Schreiben: "+(r.status===404
+    ? `Repo „${c.repo}“ nicht gefunden oder kein Zugriff` : ghFehler(r.status)));
 }
 
 /* Zusammenführen: je Objekt gewinnt der neuere Stand; Tombstones verhindern,
@@ -1347,7 +1365,7 @@ function openSyncDialog(){
       <label class="fld" style="margin-bottom:9px"><span>Token (Contents: Read and write) — bleibt auf diesem Gerät</span>
         <input name="token" type="password" value="${esc(c.token||"")}" autocomplete="off" placeholder="github_pat_…"></label>
       <div class="grid2">
-        <label class="fld"><span>Repo (besitzer/name)</span>
+        <label class="fld"><span>Repo (besitzer/name) — Name des <em>Repos</em>, nicht des Tokens</span>
           <input name="repo" value="${esc(c.repo||"")}" placeholder="benutzer/daten" autocomplete="off"></label>
         <label class="fld"><span>Dateiname</span>
           <input name="path" value="${esc(c.path||"immo-objekte.json")}" autocomplete="off"></label>
