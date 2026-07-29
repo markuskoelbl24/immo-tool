@@ -291,6 +291,26 @@ const eurM=v=>isFinite(v)?nf(0).format(Math.round(v))+" €":"–";
 const pct=(v,d=2)=>isFinite(v)?nf(d).format(v)+" %":"–";
 const num=(v,d=1)=>isFinite(v)?nf(d).format(v):"–";
 const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+/* Eingaben in deutscher Schreibweise lesen: „326.000“, „1.234,56“, „3,57“.
+   Ohne das liest JavaScript „326.000“ als 326. Rückgabe NaN, wenn nichts Zahlhaftes drinsteht. */
+function numDE(s){
+  if(typeof s==="number") return s;
+  let t=String(s??"").trim().replace(/[\s €%]/g,"");
+  if(!t) return NaN;
+  const komma=t.lastIndexOf(","), punkt=t.lastIndexOf(".");
+  if(komma>-1&&punkt>-1){
+    // beide vorhanden: das hintere Zeichen ist das Dezimaltrennzeichen
+    if(komma>punkt) t=t.replace(/\./g,"").replace(",",".");
+    else t=t.replace(/,/g,"");
+  } else if(komma>-1){
+    t=t.replace(/\./g,"").replace(",",".");
+  } else if(punkt>-1){
+    // nur Punkte: Tausenderpunkt, wenn danach genau drei Ziffern folgen („326.000“)
+    if(/^-?\d{1,3}(\.\d{3})+$/.test(t)) t=t.replace(/\./g,"");
+  }
+  const v=parseFloat(t);
+  return isFinite(v)?v:NaN;
+}
 const uid=()=>Math.random().toString(36).slice(2,9);
 const clone=o=>JSON.parse(JSON.stringify(o));
 
@@ -708,12 +728,12 @@ function renderBasis(){
     if(k.sep) return '<div class="sep"></div>';
     const v=S.basis[k.k];
     return `<div class="knob"><label for="b_${k.k}" ${k.t?`title="${esc(k.t)}"`:""}>${k.l}</label>
-      <div class="row"><input id="b_${k.k}" type="number" step="${k.s}" value="${v}"
+      <div class="row"><input id="b_${k.k}" type="text" inputmode="decimal" value="${String(v).replace(".",",")}"
         data-basis="${k.k}" ${k.t?`title="${esc(k.t)}"`:""}><span class="unit">${k.u}</span></div></div>`;
   }).join("");
   // Nicht renderAll: das würde diese Leiste neu bauen und den Fokus beim Tippen verlieren.
   el.querySelectorAll("[data-basis]").forEach(i=>i.addEventListener("input",e=>{
-    const v=parseFloat(e.target.value); if(isNaN(v))return;
+    const v=numDE(e.target.value); if(isNaN(v))return;
     S.basis[e.target.dataset.basis]=v; save();
     renderProfil(); renderStress(); renderTable();
   }));
@@ -1042,7 +1062,7 @@ function paneZiel(r){
         o.stellplatzpreis?" + "+eur(o.stellplatzpreis)+" Stellplatz":""}.
         Die Zielpreise beziehen sich auf die Wohnung; Nebenkosten und Eigenkapital rechnen automatisch mit.</p>
       <div class="addrow" style="max-width:340px">
-        <input type="number" step="1000" placeholder="eigener Zielpreis" value="${isFinite(man)?man:""}"
+        <input type="text" inputmode="decimal" placeholder="eigener Zielpreis" value="${isFinite(man)?man:""}"
           data-field="zielpreisManuell" data-id="${o.id}">
         <button class="tiny" data-act="setziel" data-id="${o.id}">rechnen</button>
       </div>
@@ -1094,9 +1114,9 @@ function paneFin(r){
       </tbody></table></div>
       <div class="addrow" style="flex-wrap:wrap;max-width:640px">
         <input placeholder="Name, z. B. Bank B / 15 J" data-v="name" style="min-width:150px">
-        <input type="number" step="0.05" placeholder="Zins %" data-v="zins" style="max-width:90px">
-        <input type="number" step="0.5" placeholder="Tilgung %" data-v="tilgung" style="max-width:100px">
-        <input type="number" step="1000" placeholder="EK €" data-v="ek" style="max-width:110px">
+        <input type="text" inputmode="decimal" placeholder="Zins %" data-v="zins" style="max-width:90px">
+        <input type="text" inputmode="decimal" placeholder="Tilgung %" data-v="tilgung" style="max-width:100px">
+        <input type="text" inputmode="decimal" placeholder="EK €" data-v="ek" style="max-width:110px">
         <button class="tiny primary" data-act="addvar" data-id="${o.id}">+ Variante</button>
       </div>
       <p class="note" style="margin-top:8px">Alle Varianten rechnen mit ${num(g.zinsbindung,0)} Jahren Bindung und
@@ -1174,8 +1194,8 @@ function paneBew(r){
       </tbody></table>
       <div class="addrow" style="flex-wrap:wrap">
         <input placeholder="Maßnahme" data-m="n" style="min-width:120px">
-        <input type="number" step="5000" placeholder="von €" data-m="v" style="max-width:100px">
-        <input type="number" step="5000" placeholder="bis €" data-m="b" style="max-width:100px">
+        <input type="text" inputmode="decimal" placeholder="von €" data-m="v" style="max-width:100px">
+        <input type="text" inputmode="decimal" placeholder="bis €" data-m="b" style="max-width:100px">
         <button class="tiny" data-act="addmass" data-id="${o.id}">+</button>
       </div>
       ${mea?`<p class="note" style="margin-top:8px">Miteigentumsanteil ${num(mea,1)} %${o.einheiten?` (geschätzt aus ${o.einheiten} Einheiten)`:""}.
@@ -1224,17 +1244,17 @@ function bindDetail(){
       if(act==="addmass"){
         const box=b.closest(".addrow");
         const n=box.querySelector('[data-m="n"]').value.trim();
-        const v=parseFloat(box.querySelector('[data-m="v"]').value);
-        const bb=parseFloat(box.querySelector('[data-m="b"]').value);
+        const v=numDE(box.querySelector('[data-m="v"]').value);
+        const bb=numDE(box.querySelector('[data-m="b"]').value);
         if(!n||!isFinite(v)) return;
         o.massnahmen.push({n,v,b:isFinite(bb)?bb:v}); save(); renderTable(); return;
       }
       if(act==="addvar"){
         const box=b.closest(".addrow");
         const name=box.querySelector('[data-v="name"]').value.trim()||"Variante";
-        const zins=parseFloat(box.querySelector('[data-v="zins"]').value);
-        const tilg=parseFloat(box.querySelector('[data-v="tilgung"]').value);
-        const ek=parseFloat(box.querySelector('[data-v="ek"]').value);
+        const zins=numDE(box.querySelector('[data-v="zins"]').value);
+        const tilg=numDE(box.querySelector('[data-v="tilgung"]').value);
+        const ek=numDE(box.querySelector('[data-v="ek"]').value);
         if(!isFinite(zins)||!isFinite(tilg)) { toast("Zins und Tilgung angeben"); return; }
         o.varianten=o.varianten||[];
         o.varianten.push({name,zins,tilgung:tilg,ek:isFinite(ek)?ek:basis(o,S.basis).knk});
@@ -1243,7 +1263,7 @@ function bindDetail(){
       if(act==="delvar"){ o.varianten.splice(+b.dataset.i,1); save(); renderTable(); return; }
       if(act==="setziel"){
         const inp=d.querySelector(`[data-field="zielpreisManuell"][data-id="${o.id}"]`);
-        const v=parseFloat(inp.value); o.zielpreisManuell=isFinite(v)?v:null; save(); renderTable(); return;
+        const v=numDE(inp.value); o.zielpreisManuell=isFinite(v)?v:null; save(); renderTable(); return;
       }
     });
     d.addEventListener("change",e=>{
@@ -1296,15 +1316,15 @@ function openObjDialog(o){
     </fieldset>
     <fieldset><legend>Substanz</legend>
       <div class="grid4">
-        <label class="fld"><span>Wohnfläche m²</span><input name="wohnflaeche" type="number" step="0.01" ${v("wohnflaeche")}></label>
-        <label class="fld"><span>Zimmer</span><input name="zimmer" type="number" step="0.5" ${v("zimmer")}></label>
+        <label class="fld"><span>Wohnfläche m²</span><input name="wohnflaeche" type="text" inputmode="decimal" ${v("wohnflaeche")}></label>
+        <label class="fld"><span>Zimmer</span><input name="zimmer" type="text" inputmode="decimal" ${v("zimmer")}></label>
         <label class="fld"><span>Etage</span><input name="etage" ${v("etage")}></label>
         <label class="fld"><span>Baujahr</span><input name="baujahr" type="number" step="1" ${v("baujahr")}></label>
         <label class="fld"><span>Letzte Sanierung</span><input name="sanierung" type="number" step="1" ${v("sanierung")}></label>
         <label class="fld"><span>Einheiten im Haus</span><input name="einheiten" type="number" step="1" ${v("einheiten")}></label>
-        <label class="fld"><span>MEA % (optional)</span><input name="mea" type="number" step="0.1" ${v("mea")}></label>
+        <label class="fld"><span>MEA % (optional)</span><input name="mea" type="text" inputmode="decimal" ${v("mea")}></label>
         <label class="fld"><span>Energieklasse</span><input name="energieklasse" ${v("energieklasse")}></label>
-        <label class="fld"><span>kWh/m²a</span><input name="energiebedarf" type="number" step="0.1" ${v("energiebedarf")}></label>
+        <label class="fld"><span>kWh/m²a</span><input name="energiebedarf" type="text" inputmode="decimal" ${v("energiebedarf")}></label>
         <label class="fld"><span>Heizung</span><input name="heizung" ${v("heizung")}></label>
       </div>
       <div style="display:flex;gap:16px;margin-top:9px;font-size:.78rem;color:var(--ink-2)">
@@ -1315,34 +1335,34 @@ function openObjDialog(o){
     </fieldset>
     <fieldset><legend>Preis</legend>
       <div class="grid4">
-        <label class="fld"><span>Kaufpreis Wohnung €</span><input name="kaufpreis" type="number" step="1000" ${v("kaufpreis")}></label>
-        <label class="fld"><span>Stellplatz-Kaufpreis €</span><input name="stellplatzpreis" type="number" step="500" ${v("stellplatzpreis")}></label>
-        <label class="fld"><span>Provision %</span><input name="provision" type="number" step="0.01" ${v("provision")}></label>
-        <label class="fld"><span>Zusatzkosten € (Küche o.ä.)</span><input name="zusatzkosten" type="number" step="500" ${v("zusatzkosten")}></label>
-        <label class="fld"><span>Gebäudeanteil % (AfA)</span><input name="gebaeudeanteil" type="number" step="1" ${v("gebaeudeanteil")}></label>
-        <label class="fld"><span>Eigener Zielpreis €</span><input name="zielpreisManuell" type="number" step="1000" ${v("zielpreisManuell")}></label>
+        <label class="fld"><span>Kaufpreis Wohnung €</span><input name="kaufpreis" type="text" inputmode="decimal" ${v("kaufpreis")}></label>
+        <label class="fld"><span>Stellplatz-Kaufpreis €</span><input name="stellplatzpreis" type="text" inputmode="decimal" ${v("stellplatzpreis")}></label>
+        <label class="fld"><span>Provision %</span><input name="provision" type="text" inputmode="decimal" ${v("provision")}></label>
+        <label class="fld"><span>Zusatzkosten € (Küche o.ä.)</span><input name="zusatzkosten" type="text" inputmode="decimal" ${v("zusatzkosten")}></label>
+        <label class="fld"><span>Gebäudeanteil % (AfA)</span><input name="gebaeudeanteil" type="text" inputmode="decimal" ${v("gebaeudeanteil")}></label>
+        <label class="fld"><span>Eigener Zielpreis €</span><input name="zielpreisManuell" type="text" inputmode="decimal" ${v("zielpreisManuell")}></label>
       </div>
       <label class="fld" style="margin-top:9px;flex-direction:row;align-items:center;gap:7px">
         <input type="checkbox" name="ekAuto" style="width:auto" ${d.ekAuto?"checked":""}>
         <span>Eigenkapital = Kaufnebenkosten (sonst Betrag rechts)</span>
-        <input name="ekEinsatz" type="number" step="1000" ${v("ekEinsatz")} style="max-width:130px">
+        <input name="ekEinsatz" type="text" inputmode="decimal" ${v("ekEinsatz")} style="max-width:130px">
       </label>
     </fieldset>
     <fieldset><legend>Miete &amp; laufende Kosten</legend>
       <label class="fld" style="flex-direction:row;align-items:center;gap:7px;margin-bottom:9px">
         <input type="checkbox" name="vermietet" style="width:auto" ${d.vermietet?"checked":""}><span>vermietet (Ist-Miete rechnen)</span></label>
       <div class="grid4">
-        <label class="fld"><span>Ist-Kaltmiete €/M</span><input name="istMiete" type="number" step="5" ${v("istMiete")}></label>
-        <label class="fld"><span>Marktmiete €/m²</span><input name="marktmieteQm" type="number" step="0.1" ${v("marktmieteQm")}></label>
-        <label class="fld"><span>Stellplatzmiete €/M</span><input name="stellplatzMiete" type="number" step="5" ${v("stellplatzMiete")}></label>
+        <label class="fld"><span>Ist-Kaltmiete €/M</span><input name="istMiete" type="text" inputmode="decimal" ${v("istMiete")}></label>
+        <label class="fld"><span>Marktmiete €/m²</span><input name="marktmieteQm" type="text" inputmode="decimal" ${v("marktmieteQm")}></label>
+        <label class="fld"><span>Stellplatzmiete €/M</span><input name="stellplatzMiete" type="text" inputmode="decimal" ${v("stellplatzMiete")}></label>
         <label class="fld"><span>Mietpfad</span><select name="mietmodell">
           <option value="markt" ${d.mietmodell==="markt"?"selected":""}>gleichmäßig steigend</option>
           <option value="kappung" ${d.mietmodell==="kappung"?"selected":""}>Kappungsgrenze 15 %/3 J bis Marktmiete</option>
         </select></label>
-        <label class="fld"><span>Hausgeld gesamt €/M</span><input name="hausgeld" type="number" step="5" ${v("hausgeld")}></label>
-        <label class="fld"><span>davon nicht umlagefähig</span><input name="hausgeldNU" type="number" step="5" ${v("hausgeldNU")}></label>
-        <label class="fld"><span>davon Verwaltung €/M</span><input name="verwaltung" type="number" step="5" ${v("verwaltung")}></label>
-        <label class="fld"><span>WEG-Rücklage gesamt €</span><input name="ruecklageWEG" type="number" step="1000" ${v("ruecklageWEG")}></label>
+        <label class="fld"><span>Hausgeld gesamt €/M</span><input name="hausgeld" type="text" inputmode="decimal" ${v("hausgeld")}></label>
+        <label class="fld"><span>davon nicht umlagefähig</span><input name="hausgeldNU" type="text" inputmode="decimal" ${v("hausgeldNU")}></label>
+        <label class="fld"><span>davon Verwaltung €/M</span><input name="verwaltung" type="text" inputmode="decimal" ${v("verwaltung")}></label>
+        <label class="fld"><span>WEG-Rücklage gesamt €</span><input name="ruecklageWEG" type="text" inputmode="decimal" ${v("ruecklageWEG")}></label>
       </div>
       <p class="note" style="margin-top:8px">„Nicht umlagefähig“ = Verwaltung + Rücklagenzuführung; nur die Verwaltung
       ist sofort Werbungskosten. Steht der Split noch nicht fest, grob 40–45 % des Hausgelds ansetzen und als offene Frage vermerken.</p>
@@ -1356,12 +1376,21 @@ function openObjDialog(o){
       const boolF=["vermietet","aufzug","balkon","stellplatz","ekAuto"];
       const t=neu?OBJ_DEF():S.objekte.find(x=>x.id===o.id);
       txtF.forEach(k=>{ if(g(k)) t[k]=g(k).value.trim(); });
-      numF.forEach(k=>{ if(!g(k))return; const val=g(k).value.trim(); t[k]=val===""?null:parseFloat(val); });
+      // Unverständliches nicht stillschweigend zu 0 machen: alten Wert behalten und sagen, welches Feld klemmt.
+      const unklar=[];
+      numF.forEach(k=>{ if(!g(k))return; const val=g(k).value.trim();
+        if(val===""){ t[k]=null; return; }
+        const z=numDE(val);
+        if(isNaN(z)){ unklar.push(`${g(k).closest(".fld")?.querySelector("span")?.textContent||k}: „${val}“`); return; }
+        t[k]=z; });
       boolF.forEach(k=>{ if(g(k)) t[k]=g(k).checked; });
       if(!t.name) t.name="Objekt ohne Namen";
       t.demo=false;   // bearbeitet = übernommen, ab jetzt ein echtes Objekt
       if(neu){ S.objekte.push(t); S.ui.offen.push(t.id); }
-      save(); renderAll(); toast(neu?"Objekt angelegt":"Gespeichert");
+      save(); renderAll();
+      toast(unklar.length
+        ? `Nicht als Zahl erkannt, bisheriger Wert behalten — ${unklar.join(" · ")}`
+        : (neu?"Objekt angelegt":"Gespeichert"));
     });
 }
 
@@ -1423,7 +1452,7 @@ function openProfilDialog(){
     <fieldset><legend>Eigenkapital &amp; Einkommen</legend>
       <div class="grid2">${PROFIL_FLD.map(f=>
         `<label class="fld"><span>${f.l} (${f.u})</span>
-         <input name="${f.k}" type="number" step="${f.d?0.01:100}" value="${p[f.k]??""}"></label>`).join("")}</div>
+         <input name="${f.k}" type="text" inputmode="decimal" value="${String(p[f.k]??"").replace(".",",")}"></label>`).join("")}</div>
     </fieldset>
     <fieldset><legend>Notiz</legend>
       <textarea name="notiz" rows="3">${esc(p.notiz)}</textarea>
@@ -1431,7 +1460,7 @@ function openProfilDialog(){
     <p class="note">Der Grenzsteuersatz steht in der Rechenbasis oben, weil er in jede Objektrechnung eingeht.</p>`,
     body=>{
       PROFIL_FLD.forEach(f=>{ const el=body.querySelector(`[name="${f.k}"]`);
-        const v=parseFloat(el.value); if(isFinite(v)) p[f.k]=v; });
+        const v=numDE(el.value); if(isFinite(v)) p[f.k]=v; });
       p.notiz=body.querySelector('[name="notiz"]').value;
       save(); renderAll(); toast("Profil gespeichert");
     });
