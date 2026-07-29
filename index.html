@@ -561,7 +561,8 @@ function save(){ stamp(); writeLocal(); queueSync(); }
 function syncCfg(){ const c=S.sync||{}; return {token:(c.token||"").trim(),repo:(c.repo||"").trim(),
   path:(c.path||"immo-objekte.json").trim(),branch:(c.branch||"main").trim()}; }
 function syncReady(){ const c=syncCfg(); return !!(c.token&&c.repo.includes("/")&&c.path); }
-function payload(){ return {basis:S.basis,profil:S.profil,objekte:S.objekte,
+function payload(){ return {basis:S.basis,profil:S.profil,
+  objekte:S.objekte.filter(o=>!o.demo),                 // Beispielobjekt gehört niemandem
   tombstones:S.tombstones||{},syncedAt:Date.now()}; }   // ohne sync/ui — Token bleibt hier
 
 function b64(str){
@@ -641,6 +642,12 @@ async function fullSync(manual,modus){
   syncing=true; setSyncBadge("laeuft");
   try{
     const {data:remote,sha}=await ghGet();
+    // Erster Abgleich auf diesem Gerät und hier steht nur das Beispiel? Dann ist Laden
+    // das Richtige — Zusammenführen würde bloß fremde Kennungen verdoppeln.
+    // Sobald eigene Objekte da sind, wird normal zusammengeführt, damit nichts verloren geht.
+    if(modus!=="push" && modus!=="pull" && !(S.sync||{}).lastSync
+       && !S.objekte.some(o=>!o.demo) && remote && (remote.objekte||[]).length) modus="pull";
+
     let neu;
     if(modus==="push"||!remote)      neu=payload();
     else if(modus==="pull")          neu=remote;
@@ -648,6 +655,7 @@ async function fullSync(manual,modus){
     S.basis={...BASIS_DEF,...(neu.basis||{})};
     S.profil={...PROFIL_DEF,...(neu.profil||{})};
     S.objekte=(neu.objekte||[]).map(o=>({...OBJ_DEF(),...o}));
+    if(S.objekte.some(o=>!o.demo)) S.objekte=S.objekte.filter(o=>!o.demo);  // Beispiel tritt ab
     S.tombstones=neu.tombstones||{};
     initSnap();                       // Stempel neu setzen, sonst gilt alles als frisch geändert
     if(modus!=="pull") await ghPut(payload(),sha);
@@ -672,7 +680,7 @@ function toast(m){ const t=document.getElementById("toast"); t.textContent=m; t.
    Frei erfundenes Beispiel, damit die Oberfläche nicht leer startet.
    Eigene Objekte über „+ Objekt“ anlegen oder per Sync laden. */
 function seed(){
-  return [{...OBJ_DEF(),
+  return [{...OBJ_DEF(), demo:true,   // markiert: wandert nie ins Repo, weicht echten Objekten
     name:"Beispiel: Musterstr. 7", strasse:"Musterstr. 7", plz:"85354", ort:"Musterstadt",
     lage:"Erfundenes Objekt zum Ausprobieren — alle Zahlen frei gewählt", status:"pruefen",
     kaufpreis:250000, provision:3.57, wohnflaeche:60, zimmer:2, etage:"1. OG",
@@ -1351,6 +1359,7 @@ function openObjDialog(o){
       numF.forEach(k=>{ if(!g(k))return; const val=g(k).value.trim(); t[k]=val===""?null:parseFloat(val); });
       boolF.forEach(k=>{ if(g(k)) t[k]=g(k).checked; });
       if(!t.name) t.name="Objekt ohne Namen";
+      t.demo=false;   // bearbeitet = übernommen, ab jetzt ein echtes Objekt
       if(neu){ S.objekte.push(t); S.ui.offen.push(t.id); }
       save(); renderAll(); toast(neu?"Objekt angelegt":"Gespeichert");
     });
@@ -1377,15 +1386,16 @@ function openSyncDialog(){
       </div>
     </fieldset>
     <fieldset><legend>Jetzt ausführen</legend>
-      <p class="note" style="margin-bottom:9px"><strong>Beim ersten Mal auf einem Gerät „Vom Repo laden“ wählen.</strong>
-      Sonst liegen dieselben Objekte doppelt vor — lokal und im Repo haben sie unterschiedliche Kennungen.
-      Danach genügt „Abgleichen“.</p>
+      <p class="note" style="margin-bottom:9px"><strong>„Abgleichen“ genügt normalerweise.</strong>
+      Auf einem neuen Gerät holt es den Stand von selbst; sind hier schon eigene Objekte,
+      werden beide Seiten zusammengeführt — je Objekt gewinnt die neuere Änderung.</p>
       <div style="display:flex;gap:8px;flex-wrap:wrap">
-        <button type="button" class="primary" data-sync="pull">Vom Repo laden</button>
-        <button type="button" data-sync="merge">Abgleichen</button>
+        <button type="button" class="primary" data-sync="merge">Abgleichen</button>
+        <button type="button" data-sync="pull">Vom Repo laden</button>
         <button type="button" data-sync="push">Ins Repo schreiben</button>
       </div>
-      <p class="note" style="margin-top:9px">„Vom Repo laden“ und „Ins Repo schreiben“ ersetzen die jeweils andere Seite vollständig.</p>
+      <p class="note" style="margin-top:9px">Die beiden rechten Knöpfe sind der Notausgang und
+      ersetzen die jeweils andere Seite <strong>vollständig</strong> — nur nutzen, wenn eine Seite eindeutig richtig ist.</p>
     </fieldset>`,
     body=>{
       const v=n=>body.querySelector(`[name="${n}"]`);
