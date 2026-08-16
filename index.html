@@ -368,8 +368,15 @@ const OBJ_DEF=()=>({
   gebaeudeanteil:70, ekEinsatz:null, ekAuto:true,
   zielpreisManuell:null,
   staerken:[], schwaechen:[], fragen:[], massnahmen:[], notiz:"",
-  varianten:[]
+  varianten:[], geschaetzt:[]
 });
+/* Felder, die als Schätzung/Annahme markierbar sind (Checkbox im Bearbeiten-Dialog,
+   Markierung in Anzeige + Export). Bewusst nur die, die tatsächlich geschätzt werden —
+   nicht jedes Feld, das waere reine UI-Unordnung ohne Nutzen. */
+const GESCHAETZT_FELDER=[
+  {k:"hausgeld",l:"Hausgeld"}, {k:"hausgeldNU",l:"davon n.u."},
+  {k:"istMiete",l:"Ist-Miete"}, {k:"marktmieteQm",l:"Marktmiete"}, {k:"ruecklageWEG",l:"Rücklage"}
+];
 const STATUS={
   favorit:{l:"Favorit",c:"good"}, pruefen:{l:"In Prüfung",c:"accent"},
   besichtigung:{l:"Besichtigung",c:"warn"}, angebot:{l:"Angebot",c:"warn"},
@@ -891,6 +898,8 @@ function paneEck(r){
   const o=r.o;
   const row=(k,v)=>`<div class="stat"><span class="k">${k}</span><span class="v">${v}</span></div>`;
   const jaNein=b=>b?"ja":"–";
+  const schaetz=k=>(o.geschaetzt||[]).includes(k)
+    ?' <span class="pill warn" title="Schätzung, noch nicht bestätigt" style="font-size:.6rem">≈ Schätzung</span>':"";
   return `<div class="detgrid">
     <div class="box"><h4>Objekt</h4>
       ${row("Adresse",esc([o.strasse,[o.plz,o.ort].filter(Boolean).join(" ")].filter(Boolean).join(", ")||"–"))}
@@ -918,11 +927,11 @@ function paneEck(r){
       ${row("Darlehen",eur(r.darlehen))}
     </div>
     <div class="box"><h4>Miete &amp; Rendite</h4>
-      ${row(o.vermietet?"Ist-Kaltmiete":"Marktmiete (Ansatz)",eur(r.kalt)+"/M")}
+      ${row(o.vermietet?"Ist-Kaltmiete":"Marktmiete (Ansatz)",eur(r.kalt)+"/M"+schaetz(o.vermietet?"istMiete":"marktmieteQm"))}
       ${r.spm?row("Stellplatzmiete",eur(r.spm)+"/M"):""}
       ${row("Miete gesamt",`<strong>${eur(r.miete)}/M</strong>`)}
       ${row("€/m² Miete",num(o.wohnflaeche>0?r.kalt/o.wohnflaeche:0,2))}
-      ${o.vermietet&&r.marktMiete>r.miete?row("Marktmiete-Potenzial",`<span class="val-good">${eur(r.marktMiete)}/M</span>`):""}
+      ${o.vermietet&&r.marktMiete>r.miete?row("Marktmiete-Potenzial",`<span class="val-good">${eur(r.marktMiete)}/M</span>${schaetz("marktmieteQm")}`):""}
       ${row("Jahreskaltmiete",eur(r.jahresmiete))}
       ${row("Faktor auf Kaufpreis",`<span class="${r.faktorKP<=25?"val-good":r.faktorKP<=30?"val-warn":"val-bad"}">${num(r.faktorKP,1)}</span>`)}
       ${row("Faktor auf Gesamtinvestition",num(r.faktorGI,1))}
@@ -953,11 +962,13 @@ function paneCf(r){
   const voll=projektion(o,g,Math.min(45,pr.laufzeit||45));
   const d=r.depot;
   const line=(k,v,cls="")=>`<tr><td>${k}</td><td class="n"><span class="num ${cls}">${v}</span></td></tr>`;
+  const schaetz=k=>(o.geschaetzt||[]).includes(k)
+    ?' <span class="pill warn" title="Schätzung, noch nicht bestätigt" style="font-size:.6rem">≈</span>':"";
   return `<div class="detgrid">
     <div class="box"><h4>Cashflow Jahr 1, monatlich</h4>
       <table class="mini"><tbody>
         ${line("Miete",eur(r.miete))}
-        ${line("− Hausgeld nicht umlagefähig","−"+eur(r.hgNU))}
+        ${line("− Hausgeld nicht umlagefähig"+schaetz("hausgeldNU"),"−"+eur(r.hgNU))}
         ${line("− eigene IH-Rücklage ("+num(g.ihRuecklage,0)+" €/m²a)","−"+eur(r.eigeneIH))}
         ${line("− Mietausfall "+num(g.mietausfall,1)+" %","−"+eur(r.ausfall))}
         ${line("<strong>= Netto-Mieteinnahme</strong>","<strong>"+eur(r.nettoMiete)+"</strong>")}
@@ -1366,6 +1377,11 @@ function openObjDialog(o){
       </div>
       <p class="note" style="margin-top:8px">„Nicht umlagefähig“ = Verwaltung + Rücklagenzuführung; nur die Verwaltung
       ist sofort Werbungskosten. Steht der Split noch nicht fest, grob 40–45 % des Hausgelds ansetzen und als offene Frage vermerken.</p>
+      <div style="display:flex;gap:14px;flex-wrap:wrap;align-items:center;margin-top:11px;padding-top:9px;border-top:1px solid var(--line)">
+        <span style="font-size:.72rem;color:var(--ink-3)">Geschätzt, noch nicht bestätigt:</span>
+        ${GESCHAETZT_FELDER.map(f=>`<label style="display:flex;gap:5px;align-items:center;font-size:.78rem;color:var(--ink-2)">
+          <input type="checkbox" name="gs_${f.k}" style="width:auto" ${(d.geschaetzt||[]).includes(f.k)?"checked":""}> ${f.l}</label>`).join("")}
+      </div>
     </fieldset>`,
     body=>{
       const g=n=>body.querySelector(`[name="${n}"]`);
@@ -1384,6 +1400,7 @@ function openObjDialog(o){
         if(isNaN(z)){ unklar.push(`${g(k).closest(".fld")?.querySelector("span")?.textContent||k}: „${val}“`); return; }
         t[k]=z; });
       boolF.forEach(k=>{ if(g(k)) t[k]=g(k).checked; });
+      t.geschaetzt=GESCHAETZT_FELDER.map(f=>f.k).filter(k=>g("gs_"+k)?.checked);
       if(!t.name) t.name="Objekt ohne Namen";
       t.demo=false;   // bearbeitet = übernommen, ab jetzt ein echtes Objekt
       if(neu){ S.objekte.push(t); S.ui.offen.push(t.id); }
@@ -1536,8 +1553,9 @@ function exportMd(){
     L.push(`| Fläche / Zimmer / Etage | ${num(o.wohnflaeche,2)} m² / ${num(o.zimmer,1)} / ${o.etage||"–"} |`);
     L.push(`| Baujahr / Sanierung | ${o.baujahr||"unbekannt"} / ${o.sanierung||"–"} |`);
     L.push(`| Energie / Heizung | ${o.energieklasse||"?"}${o.energiebedarf?` (${num(o.energiebedarf,1)} kWh/m²a)`:""} / ${o.heizung||"–"} |`);
-    L.push(`| Hausgeld | ${eur(o.hausgeld)}/M, davon ${eur(o.hausgeldNU)} nicht umlagefähig |`);
-    L.push(`| Miete | ${o.vermietet?"Ist "+eur(k.kalt):"Markt "+eur(k.kalt)}${k.spm?" + "+eur(k.spm)+" Stellplatz":""} = ${eur(k.miete)}/M |`);
+    const schaetzMd=f=>(o.geschaetzt||[]).includes(f)?" ⚠️ Schätzung":"";
+    L.push(`| Hausgeld | ${eur(o.hausgeld)}${schaetzMd("hausgeld")}/M, davon ${eur(o.hausgeldNU)}${schaetzMd("hausgeldNU")} nicht umlagefähig |`);
+    L.push(`| Miete | ${o.vermietet?"Ist "+eur(k.kalt):"Markt "+eur(k.kalt)}${schaetzMd(o.vermietet?"istMiete":"marktmieteQm")}${k.spm?" + "+eur(k.spm)+" Stellplatz":""} = ${eur(k.miete)}/M |`);
     L.push(`| Kaufnebenkosten | ${eur(k.knk)} (${pct(k.knkSatz*100)}) → Gesamtinvestition ${eur(k.gi)} |`);
     L.push(`| Faktor / Bruttorendite / Nettorendite | ${num(k.faktorKP,1)} / ${pct(k.brutto)} / ${pct(k.netto)} |`);
     L.push(`| AfA | ${num(k.afaSatz,1)} % auf ${eur(k.afaBasis)} = ${eur(k.afa)}/a |`);
