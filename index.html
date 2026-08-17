@@ -685,7 +685,9 @@ async function fullSync(manual,modus){
     if(S.objekte.some(o=>!o.demo)) S.objekte=S.objekte.filter(o=>!o.demo);  // Beispiel tritt ab
     S.tombstones=neu.tombstones||{};
     initSnap();                       // Stempel neu setzen, sonst gilt alles als frisch geändert
-    if(modus!=="pull") await ghPut(payload(),sha);
+    const pl=payload();
+    const unchanged=remote && (o=>{const x={...o};delete x.syncedAt;return JSON.stringify(x);})(pl)===(o=>{const x={...o};delete x.syncedAt;return JSON.stringify(x);})(remote);
+    if(modus!=="pull" && !unchanged) await ghPut(pl,sha);   // nichts geändert → kein Leer-Commit
     S.sync.lastSync=Date.now();
     writeLocal(); renderAll(); setSyncBadge("ok");
     if(manual) toast(modus==="pull"?"Vom Repo geladen":modus==="push"?"Ins Repo geschrieben":"Abgeglichen");
