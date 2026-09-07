@@ -1,1 +1,4 @@
 .DS_Store
+# Oeffentlicher Code, private Daten: die Objektstaende liegen im privaten daten-Repo.
+*.json
+Backup/
