@@ -220,7 +220,11 @@ legend{font-size:.68rem;letter-spacing:.08em;text-transform:uppercase;color:var(
 @media print{
   .basis,.mast-actions,.filters,button,.panel,.addrow{display:none!important}
   body{background:#fff}
-  .tblwrap{box-shadow:none;break-inside:avoid}
+  /* .tblwrap hat overflow-x:auto (fuer die 16-Objekte-Ansicht am Bildschirm) --
+     im Druck kann niemand scrollen, "versteckte" Spalten fielen dadurch komplett
+     weg (Status, Depot-Huerde). Tabelle bekommt volle Breite, nichts mehr geclippt. */
+  .tblwrap{box-shadow:none;break-inside:avoid;overflow-x:visible!important;width:100%}
+  #tbl{width:100%;table-layout:auto}
   tr.detail.hidden{display:table-row}
   /* .rail (Meine Lage/Stresstest) ist per .panel schon leer, aber .cols reservierte
      ihre 300px-Spalte trotzdem -- ganzer Bericht lief dadurch nach rechts verschoben
@@ -241,17 +245,31 @@ legend{font-size:.68rem;letter-spacing:.08em;text-transform:uppercase;color:var(
   .tabpane[data-pane="fin"]{break-after:page}
   /* CSS-Grid bricht beim Drucken nachweislich unzuverlaessig um (Chrome-Bug-Klasse:
      Grid-Container fragmentieren nicht sauber über Seitengrenzen -- einzelne Zellen
-     blieben deshalb leer, obwohl die Werte da waren). Auf Papier daher bewusst kein
-     Grid mehr: Kaesten stapeln sich als normale Bloecke (fragmentiert zuverlaessig),
-     nur per max-width auf Spaltenbreite begrenzt, damit Beschriftung/Wert nicht
-     über die volle Seitenbreite auseinanderlaufen. */
-  .detgrid{display:block!important}
-  .detgrid>.box{width:auto!important;max-width:440px;margin-bottom:10px;break-inside:avoid-page}
+     blieben deshalb leer). Flexbox mit Umbruch fragmentiert zuverlaessiger: zwei
+     Kaesten je Reihe, volle Spaltenbreite statt schmal und mit Luecke. Kaesten mit
+     grid-column:1/-1 (Darlehensvergleich, Verlauf) bekommen ueber flex-basis:100%
+     weiterhin die volle Zeile fuer sich. */
+  .detgrid{display:flex!important;flex-wrap:wrap!important;gap:14px!important}
+  .detgrid>.box{flex:1 1 calc(50% - 7px);min-width:0;margin-bottom:0;break-inside:avoid-page}
+  .detgrid>.box[style*="grid-column"]{flex-basis:100%!important}
+  /* Engere Zeilen -- weniger Umbrueche auf zwei Zeilen bei kurzen Werten. */
+  .stat{padding:3px 0!important}
+  .box{padding:10px 12px!important}
+  /* Verlauf- und aehnliche Tabellen sitzen in einem un-klassifizierten
+     overflow-x:auto-Wrapper (wie .hscroll, nur ohne die Klasse) -- im Druck genauso
+     sichtbar-los behandeln: nichts darf beim Scrollen-koennen-wir-nicht verschwinden. */
+  [style*="overflow-x:auto"]{overflow-x:visible!important}
+  .hscroll{overflow-x:visible!important}
   /* Eingabefelder mit echtem Wert (Darlehensvergleich-Varianten, Notiz) als Klartext
      statt als Formularkasten -- Eingabezeilen zum Hinzufuegen sind oben schon per
      .addrow ausgeblendet. */
   input,textarea{border:none!important;background:transparent!important;
     padding:0!important;color:inherit!important;resize:none!important}
+  /* textarea (Notiz) hat eine eigene Scroll-Box (rows="3") -- CSS allein laesst sie
+     nicht mitwachsen (getestet: weder overflow:visible noch field-sizing:content
+     wirkt bei laengerem Text). Hoehe wird daher per JS auf scrollHeight gesetzt,
+     siehe beforeprint-Listener unten. overflow:visible bleibt als Sicherheitsnetz. */
+  textarea{overflow:visible!important}
   .foot{color:#444!important}
 }
 </style>
@@ -1707,6 +1725,24 @@ document.getElementById("btnReset").addEventListener("click",()=>{
        ui:{sort:"cfSt",dir:-1,filter:"",ort:"",offen:[],tabs:{}}};
     initSnap(); save(); renderAll(); toast("Beispiel geladen");
   }
+});
+
+// Notiz-Textareas wachsen im Druck auf ihre volle Hoehe (rows="3" scrollt sonst intern,
+// CSS allein reicht nicht -- siehe Kommentar bei @media print). Gilt fuer JEDEN Druck,
+// ob ueber den Drucken-Button oder Cmd+P, daher addEventListener statt window.onafterprint
+// (das wuerde die printOnly-Logik des Drucken-Buttons ueberschreiben statt ergaenzen).
+window.addEventListener("beforeprint",()=>{
+  document.querySelectorAll("textarea").forEach(ta=>{
+    ta.dataset.printH=ta.style.height;
+    ta.style.height="auto";
+    ta.style.height=(ta.scrollHeight+2)+"px";
+  });
+});
+window.addEventListener("afterprint",()=>{
+  document.querySelectorAll("textarea").forEach(ta=>{
+    ta.style.height=ta.dataset.printH||"";
+    delete ta.dataset.printH;
+  });
 });
 
 initSnap();
