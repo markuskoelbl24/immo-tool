@@ -216,11 +216,18 @@ legend{font-size:.68rem;letter-spacing:.08em;text-transform:uppercase;color:var(
 .toast.show{opacity:1;transform:translateX(-50%) translateY(-4px)}
 .foot{font-size:.75rem;color:var(--ink-3);padding:22px 0 0;line-height:1.6;border-top:1px solid var(--rule);margin-top:26px}
 @media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+.print-h{display:none}
 @media print{
   .basis,.mast-actions,.filters,button{display:none!important}
   body{background:#fff}
   .panel,.tblwrap{box-shadow:none;break-inside:avoid}
   tr.detail.hidden{display:table-row}
+  .tabs{display:none!important}
+  .tabpane[hidden]{display:block!important}
+  .tabpane{break-inside:avoid-page;margin-bottom:18px}
+  .print-h{display:block!important;font-size:1rem;margin:18px 0 8px;padding-top:10px;
+    border-top:2px solid var(--ink);break-before:auto}
+  .print-h:first-child{border-top:none;padding-top:0;margin-top:0}
 }
 </style>
 
@@ -898,7 +905,8 @@ function detailHTML(r){
         <button class="tiny" data-act="edit">Daten ändern</button>
         <button class="tiny danger" data-act="del">Löschen</button></span>
     </div>
-    ${tabs.map(t=>`<div class="tabpane" data-pane="${t[0]}" ${t[0]===aktiv?"":"hidden"}>${panes[t[0]](r)}</div>`).join("")}
+    ${tabs.map(t=>`<div class="tabpane" data-pane="${t[0]}" ${t[0]===aktiv?"":"hidden"}>
+      <h3 class="print-h">${t[1]}</h3>${panes[t[0]](r)}</div>`).join("")}
   </div>`;
 }
 
@@ -1099,6 +1107,22 @@ function paneZiel(r){
   </div>`;
 }
 
+/* Sucht die Tilgung, die bei gegebenem Zins/EK die Ziel-Laufzeit ergibt
+   (Laufzeit sinkt streng monoton mit steigender Tilgung). */
+function tilgungFuerLaufzeit(o,g,zins,ek,zielJahre){
+  const laufzeitBei=t=>{
+    const oo={...o,ekAuto:false,ekEinsatz:ek};
+    const gg={...g,zins,tilgung:t};
+    return projektion(oo,gg,45).laufzeit;
+  };
+  let lo=0.1,hi=20;
+  for(let i=0;i<40;i++){
+    const mid=(lo+hi)/2, l=laufzeitBei(mid);
+    if(l===null||l>zielJahre) lo=mid; else hi=mid;
+  }
+  return Math.round((lo+hi)/2*100)/100;
+}
+
 function paneFin(r){
   const o=r.o,g=S.basis;
   const varianten=[{name:"Rechenbasis",zins:+g.zins,tilgung:+g.tilgung,ek:r.ek},
@@ -1126,7 +1150,7 @@ function paneFin(r){
         <td class="n"><span class="num">${eur(x.k.annuitaet/12)}</span></td>
         <td class="n"><span class="num ${x.k.cfSt<0?"val-bad":"val-good"}">${eurM(x.k.cfSt)}</span></td>
         <td class="n"><span class="num">${isFinite(x.rest10)?eur(x.rest10):"–"}</span></td>
-        <td class="n"><span class="num">${x.laufzeit?x.laufzeit+" J":"&gt;45 J"}</span></td>
+        <td class="n">${i>0?`<input type="text" inputmode="decimal" value="${x.laufzeit??''}" placeholder="${x.laufzeit?'':'>45'}" data-vfield="laufzeit" data-id="${o.id}" data-i="${i-1}" style="width:48px;text-align:right" title="Ziel-Laufzeit in Jahren eintragen — setzt die Tilgung passend dazu">`:`<span class="num">${x.laufzeit?x.laufzeit+" J":"&gt;45 J"}</span>`}</td>
         <td class="n"><span class="num">${eur(x.zinsSumme)}</span></td>
         <td class="n">${i>0?`<button class="tiny ghost" data-act="delvar" data-id="${o.id}" data-i="${i-1}">✕</button>`
           :`<button class="tiny ghost" data-act="varfrombasis" data-id="${o.id}" title="Als eigene Variante übernehmen und anpassen">→ Variante</button>`}</td>
@@ -1243,6 +1267,10 @@ function bindDetail(){
       const v=o.varianten[+inp.dataset.i]; if(!v) return;
       const f=inp.dataset.vfield;
       if(f==="name") v.name=inp.value.trim()||"Variante";
+      else if(f==="laufzeit"){
+        const jahre=numDE(inp.value);
+        if(isFinite(jahre)&&jahre>0) v.tilgung=tilgungFuerLaufzeit(o,S.basis,v.zins,v.ek,jahre);
+      }
       else { const n=numDE(inp.value); if(isFinite(n)) v[f]=n; }
       save(); renderTable();
     }));
