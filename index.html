@@ -843,8 +843,11 @@ function renderTable(){
   }));
 
   let rows=kzAlle();
-  if(u.ort) rows=rows.filter(r=>r.o.ort===u.ort);
-  if(u.filter) rows=rows.filter(r=>r.o.status===u.filter);
+  if(u.printOnly) rows=rows.filter(r=>r.o.id===u.printOnly);
+  else{
+    if(u.ort) rows=rows.filter(r=>r.o.ort===u.ort);
+    if(u.filter) rows=rows.filter(r=>r.o.status===u.filter);
+  }
   rows.sort((a,b)=>{
     let x=a[u.sort],y=b[u.sort];
     if(typeof x==="string"||typeof y==="string"){ return String(x??"").localeCompare(String(y??""),"de")*u.dir; }
@@ -891,6 +894,7 @@ function detailHTML(r){
     <div class="tabs" role="tablist">${tabs.map(t=>
       `<button class="tab" role="tab" data-tab="${t[0]}" aria-selected="${t[0]===aktiv}">${t[1]}</button>`).join("")}
       <span style="margin-left:auto;display:flex;gap:6px;align-items:center">
+        <button class="tiny" data-act="print">Drucken</button>
         <button class="tiny" data-act="edit">Daten ändern</button>
         <button class="tiny danger" data-act="del">Löschen</button></span>
     </div>
@@ -1114,17 +1118,18 @@ function paneFin(r){
         <th class="n">Restschuld J10</th><th class="n">Laufzeit</th><th class="n">Zins gesamt</th><th></th>
       </tr></thead><tbody>
       ${rows.map((x,i)=>`<tr>
-        <td>${esc(x.v.name)}</td>
-        <td class="n"><span class="num">${num(x.v.zins,2)} %</span></td>
-        <td class="n"><span class="num">${num(x.v.tilgung,1)} %</span></td>
-        <td class="n"><span class="num">${eur(x.v.ek)}</span></td>
+        <td>${i>0?`<input value="${esc(x.v.name)}" data-vfield="name" data-id="${o.id}" data-i="${i-1}" style="width:100%;min-width:120px">`:esc(x.v.name)}</td>
+        <td class="n">${i>0?`<input type="text" inputmode="decimal" value="${num(x.v.zins,2)}" data-vfield="zins" data-id="${o.id}" data-i="${i-1}" style="width:56px;text-align:right">`:`<span class="num">${num(x.v.zins,2)} %</span>`}</td>
+        <td class="n">${i>0?`<input type="text" inputmode="decimal" value="${num(x.v.tilgung,1)}" data-vfield="tilgung" data-id="${o.id}" data-i="${i-1}" style="width:56px;text-align:right">`:`<span class="num">${num(x.v.tilgung,1)} %</span>`}</td>
+        <td class="n">${i>0?`<input type="text" inputmode="decimal" value="${num(x.v.ek,0)}" data-vfield="ek" data-id="${o.id}" data-i="${i-1}" style="width:80px;text-align:right">`:`<span class="num">${eur(x.v.ek)}</span>`}</td>
         <td class="n"><span class="num">${eur(x.k.darlehen)}</span></td>
         <td class="n"><span class="num">${eur(x.k.annuitaet/12)}</span></td>
         <td class="n"><span class="num ${x.k.cfSt<0?"val-bad":"val-good"}">${eurM(x.k.cfSt)}</span></td>
         <td class="n"><span class="num">${isFinite(x.rest10)?eur(x.rest10):"–"}</span></td>
         <td class="n"><span class="num">${x.laufzeit?x.laufzeit+" J":"&gt;45 J"}</span></td>
         <td class="n"><span class="num">${eur(x.zinsSumme)}</span></td>
-        <td class="n">${i>0?`<button class="tiny ghost" data-act="delvar" data-id="${o.id}" data-i="${i-1}">✕</button>`:""}</td>
+        <td class="n">${i>0?`<button class="tiny ghost" data-act="delvar" data-id="${o.id}" data-i="${i-1}">✕</button>`
+          :`<button class="tiny ghost" data-act="varfrombasis" data-id="${o.id}" title="Als eigene Variante übernehmen und anpassen">→ Variante</button>`}</td>
       </tr>`).join("")}
       </tbody></table></div>
       <div class="addrow" style="flex-wrap:wrap;max-width:640px">
@@ -1233,6 +1238,14 @@ function bindDetail(){
       d.querySelectorAll(".tabpane").forEach(p=>p.hidden=(p.dataset.pane!==t.dataset.tab));
       S.ui.tabs=S.ui.tabs||{}; S.ui.tabs[id]=t.dataset.tab; save();
     }));
+    d.querySelectorAll("[data-vfield]").forEach(inp=>inp.addEventListener("change",()=>{
+      const o=S.objekte.find(x=>x.id===inp.dataset.id); if(!o) return;
+      const v=o.varianten[+inp.dataset.i]; if(!v) return;
+      const f=inp.dataset.vfield;
+      if(f==="name") v.name=inp.value.trim()||"Variante";
+      else { const n=numDE(inp.value); if(isFinite(n)) v[f]=n; }
+      save(); renderTable();
+    }));
     d.addEventListener("click",e=>{
       const b=e.target.closest("[data-act]"); if(!b) return;
       const o=S.objekte.find(x=>x.id===(b.dataset.id||id)); if(!o) return;
@@ -1276,6 +1289,18 @@ function bindDetail(){
         save(); renderTable(); return;
       }
       if(act==="delvar"){ o.varianten.splice(+b.dataset.i,1); save(); renderTable(); return; }
+      if(act==="varfrombasis"){
+        o.varianten=o.varianten||[];
+        o.varianten.push({name:"Rechenbasis (angepasst)", zins:+S.basis.zins, tilgung:+S.basis.tilgung, ek:basis(o,S.basis).knk});
+        save(); renderTable(); return;
+      }
+      if(act==="print"){
+        S.ui.printOnly=o.id;
+        renderTable();
+        window.onafterprint=()=>{ S.ui.printOnly=null; renderTable(); window.onafterprint=null; };
+        setTimeout(()=>window.print(),50);
+        return;
+      }
       if(act==="setziel"){
         const inp=d.querySelector(`[data-field="zielpreisManuell"][data-id="${o.id}"]`);
         const v=numDE(inp.value); o.zielpreisManuell=isFinite(v)?v:null; save(); renderTable(); return;
