@@ -181,6 +181,8 @@ tr.detail.hidden{display:none}
 .mini{width:100%;min-width:0;font-size:.8rem}
 .mini th,.mini td{padding:4px 6px}
 .mini thead th{position:static;background:transparent;border-bottom:1px solid var(--rule-2)}
+.hscroll{overflow-x:auto;scrollbar-width:none}
+.hscroll::-webkit-scrollbar{display:none}
 .note{font-size:.78rem;color:var(--ink-2);line-height:1.5}
 .note.warnbox{background:var(--warn-bg);color:var(--warn);border-radius:6px;padding:9px 11px;font-weight:500}
 .note.badbox{background:var(--bad-bg);color:var(--bad);border-radius:6px;padding:9px 11px;font-weight:500}
@@ -1106,7 +1108,7 @@ function paneFin(r){
   });
   return `<div class="detgrid">
     <div class="box" style="grid-column:1/-1"><h4>Darlehensvergleich</h4>
-      <div style="overflow-x:auto"><table class="mini"><thead><tr>
+      <div class="hscroll"><table class="mini"><thead><tr>
         <th>Variante</th><th class="n">Zins</th><th class="n">Tilgung</th><th class="n">EK</th>
         <th class="n">Darlehen</th><th class="n">Rate/M</th><th class="n">CF n. St.</th>
         <th class="n">Restschuld J10</th><th class="n">Laufzeit</th><th class="n">Zins gesamt</th><th></th>
@@ -1137,7 +1139,7 @@ function paneFin(r){
       die Laufzeit passt sich an. „Zins gesamt“ ist die Summe aller Zinszahlungen bis zur Volltilgung.</p>
     </div>
     <div class="box"><h4>Eigenkapital-Hebel</h4>
-      <table class="mini"><thead><tr><th class="n">EK</th><th class="n">Darlehen</th><th class="n">CF n. St.</th><th class="n">Depot-Hürde</th></tr></thead><tbody>
+      <div class="hscroll"><table class="mini"><thead><tr><th class="n">EK</th><th class="n">Darlehen</th><th class="n">CF n. St.</th><th class="n">Depot-Hürde</th></tr></thead><tbody>
       ${[r.knk, r.knk+25000, r.knk+50000, r.knk+100000].map(ek=>{
         const oo={...o,ekAuto:false,ekEinsatz:ek};
         const k=kennzahlen(oo,g), d=depotHuerde(oo,g);
@@ -1146,7 +1148,7 @@ function paneFin(r){
           <td class="n"><span class="num ${k.cfSt<0?"val-bad":"val-good"}">${eurM(k.cfSt)}</span></td>
           <td class="n"><span class="num ${d.huerde<=1?"val-good":"val-warn"}">${pct(d.huerde,2)}</span></td></tr>`;
       }).join("")}
-      </tbody></table>
+      </tbody></table></div>
       <p class="note" style="margin-top:8px">Mehr Eigenkapital verbessert den Cashflow, aber kaum die Hürde
       gegen das Depot — bei negativem Hebel schichtet man Kapital in die schlechtere Rendite um.</p>
     </div>
