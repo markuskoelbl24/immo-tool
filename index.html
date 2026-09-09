@@ -218,9 +218,9 @@ legend{font-size:.68rem;letter-spacing:.08em;text-transform:uppercase;color:var(
 @media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
 .print-h{display:none}
 @media print{
-  .basis,.mast-actions,.filters,button{display:none!important}
+  .basis,.mast-actions,.filters,button,.panel,.addrow{display:none!important}
   body{background:#fff}
-  .panel,.tblwrap{box-shadow:none;break-inside:avoid}
+  .tblwrap{box-shadow:none;break-inside:avoid}
   tr.detail.hidden{display:table-row}
   .tabs{display:none!important}
   .tabpane[hidden]{display:block!important}
@@ -228,6 +228,17 @@ legend{font-size:.68rem;letter-spacing:.08em;text-transform:uppercase;color:var(
   .print-h{display:block!important;font-size:1rem;margin:18px 0 8px;padding-top:10px;
     border-top:2px solid var(--ink);break-before:auto}
   .print-h:first-child{border-top:none;padding-top:0;margin-top:0}
+  /* Eckdaten/Finanzierung stehen normal in mehreren Spalten nebeneinander (.detgrid) --
+     auf der Papierbreite reicht das nicht, Inhalte liefen bisher rechts von der Seite
+     ab (z.B. "Miete & Rendite" komplett ohne Werte). Auf Papier eine Spalte, volle Breite. */
+  .detgrid{display:grid!important;grid-template-columns:1fr 1fr!important;gap:14px!important}
+  .detgrid>.box{width:auto!important;margin-bottom:0;break-inside:avoid-page}
+  /* Eingabefelder mit echtem Wert (Darlehensvergleich-Varianten, Notiz) als Klartext
+     statt als Formularkasten -- Eingabezeilen zum Hinzufuegen sind oben schon per
+     .addrow ausgeblendet. */
+  input,textarea{border:none!important;background:transparent!important;
+    padding:0!important;color:inherit!important;resize:none!important}
+  .foot{color:#444!important}
 }
 </style>
 
