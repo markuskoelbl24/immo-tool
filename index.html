@@ -222,12 +222,21 @@ legend{font-size:.68rem;letter-spacing:.08em;text-transform:uppercase;color:var(
   body{background:#fff}
   .tblwrap{box-shadow:none;break-inside:avoid}
   tr.detail.hidden{display:table-row}
+  /* .rail (Meine Lage/Stresstest) ist per .panel schon leer, aber .cols reservierte
+     ihre 300px-Spalte trotzdem -- ganzer Bericht lief dadurch nach rechts verschoben
+     und beschnitten. Auf Papier eine Spalte, volle Breite. */
+  .cols{display:block!important}
   .tabs{display:none!important}
   .tabpane[hidden]{display:block!important}
-  .tabpane{break-inside:avoid-page;margin-bottom:18px}
-  .print-h{display:block!important;font-size:1rem;margin:18px 0 8px;padding-top:10px;
+  .tabpane{break-inside:avoid-page;margin-bottom:0}
+  .print-h{display:block!important;font-size:1rem;margin:8px 0 8px;padding-top:6px;
     border-top:2px solid var(--ink);break-before:auto}
   .print-h:first-child{border-top:none;padding-top:0;margin-top:0}
+  /* Kapitel-Einteilung: Eckdaten / Cashflow+Zielpreis zusammen / Finanzierung /
+     Bewertung sollen je auf einer eigenen Seite stehen, nicht querbeet umbrechen. */
+  .tabpane[data-pane="eck"]{break-after:page}
+  .tabpane[data-pane="ziel"]{break-after:page}
+  .tabpane[data-pane="fin"]{break-after:page}
   /* Eckdaten/Finanzierung stehen normal in mehreren Spalten nebeneinander (.detgrid) --
      auf der Papierbreite reicht das nicht, Inhalte liefen bisher rechts von der Seite
      ab (z.B. "Miete & Rendite" komplett ohne Werte). Auf Papier eine Spalte, volle Breite. */
