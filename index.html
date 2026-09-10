@@ -205,6 +205,12 @@ ul.checks li.done span{text-decoration:line-through;color:var(--ink-3)}
 ul.checks .txt{flex:1}
 .addrow{display:flex;gap:6px;margin-top:8px}
 .addrow input{flex:1}
+/* 2. Darlehen (BHW): ausgegraut, bis das Haekchen es scharf schaltet */
+.bhw-toggle{display:flex;gap:7px;align-items:center;font-size:.8rem;font-weight:600;
+  color:var(--ink-2);cursor:pointer;margin:2px 0 9px}
+.bhw-off{opacity:.5}
+.bhw-off .bhw-toggle{opacity:1;color:var(--ink-2)}
+.bhw-inp input:disabled{background:transparent;border-color:var(--rule-2);color:var(--ink-3);cursor:not-allowed}
 
 /* modal */
 dialog{border:1px solid var(--rule);border-radius:10px;background:var(--card);color:var(--ink);
@@ -427,16 +433,21 @@ const BASIS_KNOBS=[
    Bewusst leer: Dieser Quellcode ist öffentlich. Die eigenen Zahlen kommen
    entweder über „Meine Lage → ändern“ oder aus der synchronisierten JSON. */
 const PROFIL_DEF={
-  liquidesEK:0, depot:0, bhwDarlehen:0, bhwZins:0, bhwRate:0,
+  liquidesEK:0, depot:0,
+  bhwGuthaben:0, bhwDarlehen:0, bhwZins:0, bhwRate:0, bhwLaufzeit:12,
   ueberschuss:0, sparraten:0, eigeneWarmmiete:0,
   notiz:""
 };
+/* BHW-Felder sind hier nur die Vorgaben ("mein Bausparvertrag"). Ob und mit welchen
+   Werten das BHW in eine Objektrechnung eingeht, steht pro Objekt im Finanzierung-Tab. */
 const PROFIL_FLD=[
   {k:"liquidesEK",l:"Liquides EK",u:"€"},
   {k:"depot",l:"Depotwert",u:"€"},
-  {k:"bhwDarlehen",l:"Zweitdarlehen",u:"€"},
-  {k:"bhwZins",l:"Zins Zweitdarlehen",u:"%",d:2},
-  {k:"bhwRate",l:"Rate Zweitdarlehen",u:"€/M"},
+  {k:"bhwGuthaben",l:"BHW-Guthaben (zählt als EK)",u:"€"},
+  {k:"bhwDarlehen",l:"BHW-Darlehen",u:"€"},
+  {k:"bhwZins",l:"BHW-Zins",u:"%",d:2},
+  {k:"bhwRate",l:"BHW-Rate",u:"€/M"},
+  {k:"bhwLaufzeit",l:"BHW-Laufzeit",u:"J"},
   {k:"ueberschuss",l:"Haushaltsüberschuss",u:"€/M"},
   {k:"sparraten",l:"Pausierbare Sparraten",u:"€/M"},
   {k:"eigeneWarmmiete",l:"Eigene Warmmiete",u:"€/M"}
@@ -451,7 +462,7 @@ const OBJ_DEF=()=>({
   hausgeld:0, hausgeldNU:0, verwaltung:30, ruecklageWEG:null,
   vermietet:false, istMiete:0, stellplatzMiete:0, marktmieteQm:14, mietmodell:"markt",
   gebaeudeanteil:70, ekEinsatz:null, ekAuto:true,
-  zielpreisManuell:null,
+  zielpreisManuell:null, bhw:{on:false},
   staerken:[], schwaechen:[], fragen:[], massnahmen:[], notiz:"",
   varianten:[], geschaetzt:[]
 });
@@ -471,6 +482,21 @@ const STATUS={
 /* ================= RECHENKERN ================= */
 function afaSatzFor(o){ return (o.baujahr && o.baujahr<1925)?2.5:2.0; }
 
+/* BHW / 2. Darlehen: pro Objekt in o.bhw, fehlende Werte aus den Profil-Vorgaben.
+   Solange o.bhw.on nicht gesetzt ist, liefert das on:false -> überall Beitrag null. */
+function bhwFor(o){
+  const d=S.profil||{}, b=(o&&o.bhw)||{};
+  const v=(x,y)=>(x==null||x==="")?(+y||0):(+x||0);
+  return {
+    on: !!b.on,
+    betrag: v(b.betrag, d.bhwDarlehen),
+    zins:   v(b.zins,   d.bhwZins),
+    rate:   v(b.rate,   d.bhwRate),
+    laufzeit: v(b.laufzeit, d.bhwLaufzeit||12),
+    guthaben: +d.bhwGuthaben||0
+  };
+}
+
 function basis(o,g){
   const kpGesamt=(+o.kaufpreis||0)+(+o.stellplatzpreis||0);
   const knkSatz=((+g.grest||0)+(+g.notar||0)+(+g.grundbuch||0)+(+o.provision||0))/100;
@@ -485,17 +511,26 @@ function basis(o,g){
   const eigeneIH=(+o.wohnflaeche||0)*(+g.ihRuecklage||0)/12;
   const ausfall=miete*(+g.mietausfall||0)/100;
   const nettoMiete=miete-hgNU-eigeneIH-ausfall;
-  const ek=o.ekAuto?knk:(+o.ekEinsatz||0);
-  const darlehen=Math.max(0,gi-ek);
-  const zinsJ1=darlehen*(+g.zins||0)/100;
-  const annuitaet=darlehen*((+g.zins||0)+(+g.tilgung||0))/100;
+  // 2. Darlehen (BHW): Guthaben ist echtes EK, das Darlehen senkt den Bankkredit.
+  const bhw=bhwFor(o);
+  const bhwBetrag=bhw.on?bhw.betrag:0;
+  const bhwGut=bhw.on?bhw.guthaben:0;
+  const bhwRateM=bhw.on?bhw.rate:0;
+  const ekCash=o.ekAuto?knk:(+o.ekEinsatz||0);
+  const ek=ekCash+bhwGut;
+  const darlehen=Math.max(0,gi-ek-bhwBetrag);      // Bankdarlehen, 1. Rang
+  const schuldGesamt=darlehen+bhwBetrag;
+  const bhwZinsJ1=bhwBetrag*(bhw.zins||0)/100;
+  const zinsJ1=darlehen*(+g.zins||0)/100+bhwZinsJ1;  // gesamter absetzbarer Zins Jahr 1
+  const annuitaet=darlehen*((+g.zins||0)+(+g.tilgung||0))/100;  // Bank-Annuität, jährlich
   // Außenstellplatz = Grund und Boden, nicht abschreibbar
   const bauAnteil=kpGesamt>0?((+o.kaufpreis||0)/kpGesamt):1;
   const afaSatz=afaSatzFor(o);
   const afaBasis=(gi-(+o.zusatzkosten||0))*bauAnteil*(+o.gebaeudeanteil||0)/100;
   const afa=afaBasis*afaSatz/100;
   return {kpGesamt,knk,knkSatz,gi,kalt,miete,marktMiete,jahresmiete,hgNU,eigeneIH,ausfall,
-          nettoMiete,ek,darlehen,zinsJ1,annuitaet,afa,afaSatz,afaBasis,spm};
+          nettoMiete,ek,ekCash,darlehen,schuldGesamt,zinsJ1,annuitaet,afa,afaSatz,afaBasis,spm,
+          bhw,bhwBetrag,bhwGut,bhwRateM,bhwZinsJ1};
 }
 
 function kennzahlen(o,g){
@@ -504,7 +539,7 @@ function kennzahlen(o,g){
   const faktorGI=b.jahresmiete>0?b.gi/b.jahresmiete:NaN;
   const brutto=b.kpGesamt>0?b.jahresmiete/b.kpGesamt*100:NaN;
   const netto=b.gi>0?b.nettoMiete*12/b.gi*100:NaN;
-  const cfOp=b.nettoMiete-b.annuitaet/12;
+  const cfOp=b.nettoMiete-b.annuitaet/12-b.bhwRateM;
   const stErg=b.jahresmiete-(+o.verwaltung||0)*12-b.zinsJ1-b.afa;
   const steuer=stErg*(+g.steuersatz||0)/100;
   const cfSt=cfOp-steuer/12;
@@ -514,7 +549,7 @@ function kennzahlen(o,g){
   if(o.vermietet && b.marktMiete>b.miete){
     const p={...o,vermietet:false,marktmieteQm:+o.marktmieteQm};
     const bp=basis(p,g);
-    const cfOpP=bp.nettoMiete-bp.annuitaet/12;
+    const cfOpP=bp.nettoMiete-bp.annuitaet/12-bp.bhwRateM;
     const stP=(bp.jahresmiete-(+o.verwaltung||0)*12-bp.zinsJ1-bp.afa)*(+g.steuersatz||0)/100;
     cfPot=cfOpP-stP/12; faktorPot=bp.kpGesamt/bp.jahresmiete;
   }
@@ -567,6 +602,13 @@ function mietePfad(o,g,jahre){
 function projektion(o,g,jahre){
   const b=basis(o,g);
   const plan=amortisation(b.darlehen,+g.zins,+g.tilgung,+g.zinsbindung,+g.anschlusszins,Math.max(jahre,45));
+  // 2. Darlehen (BHW): über die feste Rate den Tilgungssatz herleiten, eigener Plan,
+  // keine Zinsbindungs-Umstellung. bhwPlan[j-1] undefined -> ab da kein BHW mehr (Rate faellt weg).
+  let bhwPlan=[];
+  if(b.bhwBetrag>0){
+    const tp=Math.max(0.05, b.bhwRateM*12/b.bhwBetrag*100-(b.bhw.zins||0));
+    bhwPlan=amortisation(b.bhwBetrag,b.bhw.zins||0,tp,0,null,Math.max(jahre,45));
+  }
   const mieten=mietePfad(o,g,jahre);
   const eskK=1+(+g.kostensteigerung||0)/100;
   const rows=[]; let kum=0;
@@ -577,17 +619,20 @@ function projektion(o,g,jahre){
     const ih=(+o.wohnflaeche||0)*(+g.ihRuecklage||0)*f;
     const af=miete*(+g.mietausfall||0)/100;
     const p=plan[j-1]||{zins:0,tilgung:0,rest:0,zinssatz:+g.zins};
-    const cfOp=miete-hg-ih-af-p.zins-p.tilgung;
-    const stErg=miete-(+o.verwaltung||0)*12*f-p.zins-b.afa;
+    const bp=bhwPlan[j-1]||{zins:0,tilgung:0,rest:0};
+    const cfOp=miete-hg-ih-af-p.zins-p.tilgung-bp.zins-bp.tilgung;
+    const stErg=miete-(+o.verwaltung||0)*12*f-p.zins-bp.zins-b.afa;
     const st=stErg*(+g.steuersatz||0)/100;
     const cf=cfOp-st;
     kum+=cf;
     const wert=b.kpGesamt*Math.pow(1+(+g.wertsteigerung||0)/100,j);
-    rows.push({jahr:j,miete,hg,ih,af,zins:p.zins,tilgung:p.tilgung,zinssatz:p.zinssatz,
-      afa:b.afa,steuer:-st,cfOp,cf,kum,rest:p.rest,wert,ek:wert-p.rest});
+    const rest=p.rest+bp.rest;
+    rows.push({jahr:j,miete,hg,ih,af,zins:p.zins+bp.zins,tilgung:p.tilgung+bp.tilgung,zinssatz:p.zinssatz,
+      bhwZins:bp.zins,bhwTilgung:bp.tilgung,bhwRest:bp.rest,
+      afa:b.afa,steuer:-st,cfOp,cf,kum,rest,wert,ek:wert-rest});
   }
   const laufzeit=plan.length&&plan[plan.length-1].rest<=0.005?plan[plan.length-1].jahr:null;
-  return {rows,plan,laufzeit,b};
+  return {rows,plan,bhwPlan,laufzeit,b};
 }
 
 /* Depot-Hürde: ab welcher Wertsteigerung schlägt das Objekt den Sparplan? */
@@ -604,14 +649,14 @@ function depotHuerde(o,g){
   const gewinn=Math.max(0,depot-eingezahlt);
   const steuersatz=0.26375*0.7; // Abgeltungsteuer, 30 % Teilfreistellung Aktienfonds
   const depotNetto=depot-gewinn*steuersatz;
-  const rest=pr.rows.length?pr.rows[pr.rows.length-1].rest:b.darlehen;
+  const rest=pr.rows.length?pr.rows[pr.rows.length-1].rest:b.schuldGesamt;
   const wertNoetigDepot=depotNetto+rest;
   const wertNoetigBE=eingezahlt+rest;
   const huerde=b.kpGesamt>0?(Math.pow(wertNoetigDepot/b.kpGesamt,1/N)-1)*100:NaN;
   const breakEven=b.kpGesamt>0?(Math.pow(wertNoetigBE/b.kpGesamt,1/N)-1)*100:NaN;
   const wertProg=b.kpGesamt*Math.pow(1+(+g.wertsteigerung||0)/100,N);
   return {N,eingezahlt,depotNetto,rest,huerde,breakEven,
-          saldo:(wertProg-rest)-eingezahlt, tilgung:b.darlehen-rest, wertProg};
+          saldo:(wertProg-rest)-eingezahlt, tilgung:b.schuldGesamt-rest, wertProg};
 }
 
 /* Zielpreis per Bisektion */
@@ -838,13 +883,15 @@ function renderProfil(){
   const p=S.profil, ks=kzAlle();
   const best=ks.filter(k=>k.o.status!=="verworfen"&&k.o.status!=="weg");
   const el=document.getElementById("profilBox");
-  const gesamtEK=p.liquidesEK+p.bhwDarlehen;
+  const ekEcht=p.liquidesEK+(p.bhwGuthaben||0);
+  const gesamtEK=ekEcht+p.bhwDarlehen;
   const leer=!(p.liquidesEK||p.depot||p.ueberschuss);
   el.innerHTML=`
     ${leer?'<p class="note warnbox" style="margin:0 0 11px">Noch keine eigenen Zahlen. Über „ändern“ eintragen — '+
       'sie steuern Stresstest und Nebenkosten-Deckung.</p>':""}
     <div class="stat"><span class="k">Liquides EK</span><span class="v">${eur(p.liquidesEK)}</span></div>
-    <div class="stat"><span class="k">+ Zweitdarlehen (${num(p.bhwZins,2)} %)</span><span class="v">${eur(p.bhwDarlehen)}</span></div>
+    ${p.bhwGuthaben?`<div class="stat"><span class="k">+ BHW-Guthaben</span><span class="v">${eur(p.bhwGuthaben)}</span></div>`:""}
+    ${p.bhwDarlehen?`<div class="stat"><span class="k">+ BHW-Darlehen möglich (${num(p.bhwZins,2)} %)</span><span class="v">${eur(p.bhwDarlehen)}</span></div>`:""}
     <div class="stat"><span class="k">= verfügbar ohne Depot</span><span class="v">${eur(gesamtEK)}</span></div>
     <div class="stat"><span class="k">Depot (Reserve)</span><span class="v">${eur(p.depot)}</span></div>
     <div class="stat"><span class="k">Haushaltsüberschuss</span><span class="v">${eur(p.ueberschuss)}/M</span></div>
@@ -853,9 +900,9 @@ function renderProfil(){
     <p class="note" style="margin:10px 0 0">${esc(p.notiz)}</p>
     <h4 style="font-family:var(--sans);font-size:.68rem;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-3);margin:14px 0 6px">Nebenkosten-Deckung</h4>
     ${best.length?best.map(k=>{
-      const deckungLiq=p.liquidesEK/k.knk, deckungAll=gesamtEK/k.knk;
+      const deckungLiq=ekEcht/k.knk, deckungAll=gesamtEK/k.knk;
       const cls=deckungLiq>=1?"ok":(deckungAll>=1?"warn":"bad");
-      const lbl=deckungLiq>=1?"aus liquidem EK":(deckungAll>=1?"nur mit Zweitdarlehen":"reicht nicht");
+      const lbl=deckungLiq>=1?(p.bhwGuthaben?"aus EK + BHW-Guthaben":"aus liquidem EK"):(deckungAll>=1?"nur mit BHW-Darlehen":"reicht nicht");
       return `<div style="margin-bottom:7px">
         <div style="display:flex;justify-content:space-between;gap:8px;font-size:.75rem">
           <span style="color:var(--ink-2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(k.o.name)}</span>
@@ -1015,8 +1062,10 @@ function paneEck(r){
       ${row("Kaufnebenkosten gesamt",`<span class="val-warn">${eur(r.knk)}</span> (${pct(r.knkSatz*100)})`)}
       ${o.zusatzkosten?row("Zusatzkosten (Küche o.ä.)",eur(o.zusatzkosten)):""}
       ${row("Gesamtinvestition",`<strong>${eur(r.gi)}</strong>`)}
-      ${row("Eigenkapital-Einsatz",eur(r.ek)+(o.ekAuto?" (= KNK)":""))}
-      ${row("Darlehen",eur(r.darlehen))}
+      ${row("Eigenkapital-Einsatz",r.bhwGut>0?`${eur(r.ek)} <span style="opacity:.7">(${eur(r.ekCash)} + ${eur(r.bhwGut)} BHW)</span>`:eur(r.ek)+(o.ekAuto?" (= KNK)":""))}
+      ${r.bhwBetrag>0
+        ? row("Darlehen Bank",eur(r.darlehen))+row("Darlehen BHW",`${eur(r.bhwBetrag)} <span style="opacity:.7">· ${num(r.bhw.zins,2)} %</span>`)
+        : row("Darlehen",eur(r.darlehen))}
     </div>
     <div class="box"><h4>Miete &amp; Rendite</h4>
       ${row(o.vermietet?"Ist-Kaltmiete":"Marktmiete (Ansatz)",eur(r.kalt)+"/M"+schaetz(o.vermietet?"istMiete":"marktmieteQm"))}
@@ -1065,18 +1114,20 @@ function paneCf(r){
         ${line("− Mietausfall "+num(g.mietausfall,1)+" %","−"+eur(r.ausfall))}
         ${line("<strong>= Netto-Mieteinnahme</strong>","<strong>"+eur(r.nettoMiete)+"</strong>")}
         ${line("− Annuität ("+num(g.zins,2)+" % + "+num(g.tilgung,1)+" %)","−"+eur(r.annuitaet/12))}
+        ${r.bhwRateM>0?line("− Rate 2. Darlehen (BHW, "+num(r.bhw.zins,2)+" %)","−"+eur(r.bhwRateM)):""}
         ${line("<strong>= CF operativ</strong>","<strong>"+eurM(r.cfOp)+"</strong>",r.cfOp<0?"val-bad":"val-good")}
         ${line("+ Steuererstattung","+"+eurM(r.steuerMonat),"val-good")}
         ${line("<strong>= CF nach Steuern</strong>","<strong>"+eurM(r.cfSt)+"</strong>",r.cfSt<0?"val-bad":"val-good")}
         ${isFinite(r.cfPot)?line("CF bei Marktmiete",eurM(r.cfPot),"val-warn"):""}
       </tbody></table>
-      <p class="note" style="margin-top:8px">Davon ${eur(r.annuitaet/12*(g.tilgung/(g.zins+g.tilgung)))}/M Tilgung —
+      <p class="note" style="margin-top:8px">Davon ${eur(r.annuitaet/12*(g.tilgung/(g.zins+g.tilgung))+Math.max(0,r.bhwRateM-r.bhwZinsJ1/12))}/M Tilgung —
       also Vermögensaufbau, nicht Verlust.</p>
     </div>
 
     <div class="box"><h4>${d.N} Jahre — Bilanz</h4>
       <table class="mini"><tbody>
         ${line("Eigenkapital-Einsatz",eur(r.ek))}
+        ${r.bhwGut>0?line('<span style="opacity:.7">davon BHW-Guthaben</span>','<span style="opacity:.7">'+eur(r.bhwGut)+'</span>'):""}
         ${line("+ Zuschüsse über "+d.N+" Jahre",eur(d.eingezahlt-r.ek))}
         ${line("<strong>= eingesetztes Kapital</strong>","<strong>"+eur(d.eingezahlt)+"</strong>")}
         ${line("Tilgungsleistung",eur(d.tilgung),"val-good")}
@@ -1109,8 +1160,11 @@ function paneCf(r){
           <td class="n"><span class="num">${eur(x.wert)}</span></td>
           <td class="n"><span class="num ${x.ek>0?"val-good":"val-bad"}">${eur(x.ek)}</span></td></tr>`).join("")}
       </tbody></table></div>
+      ${r.bhwBetrag>0?`<p class="note" style="margin-top:8px">Zins / Tilgung / Restschuld / Eigenkapital
+        enthalten das 2. Darlehen (BHW). Die Rate sinkt um ${eur(r.bhwRateM)}/M, sobald es getilgt ist
+        (nach ~${bhwFor(o).laufzeit} Jahren).</p>`:""}
       <details style="margin-top:10px"><summary style="cursor:pointer;font-size:.8rem;color:var(--accent);font-weight:600">
-        Vollständige Tilgung bis zur Schuldenfreiheit${pr.laufzeit?" — "+pr.laufzeit+" Jahre":""}</summary>
+        Vollständige Tilgung ${r.bhwBetrag>0?"des Bankdarlehens":"bis zur Schuldenfreiheit"}${pr.laufzeit?" — "+pr.laufzeit+" Jahre":""}</summary>
         <div style="overflow-x:auto;margin-top:9px"><table class="mini"><thead><tr>
           <th>Jahr</th><th class="n">Zinssatz</th><th class="n">Rate/M</th><th class="n">Zins</th>
           <th class="n">Tilgung</th><th class="n">Restschuld</th></tr></thead><tbody>
@@ -1201,7 +1255,10 @@ function tilgungFuerLaufzeit(o,g,zins,ek,zielJahre){
 
 function paneFin(r){
   const o=r.o,g=S.basis;
-  const varianten=[{name:"Rechenbasis",zins:+g.zins,tilgung:+g.tilgung,ek:r.ek},
+  const w=bhwFor(o);
+  // ek hier = Bar-EK (ohne BHW-Guthaben) -- basis() legt das Guthaben bei aktivem BHW
+  // selbst dazu, sonst wuerde es beim Durchreichen als ekEinsatz doppelt zaehlen.
+  const varianten=[{name:"Rechenbasis",zins:+g.zins,tilgung:+g.tilgung,ek:r.ekCash},
     ...(o.varianten||[])];
   const rows=varianten.map(v=>{
     const oo={...o,ekAuto:false,ekEinsatz:v.ek};
@@ -1241,7 +1298,9 @@ function paneFin(r){
       </div>
       <p class="note" style="margin-top:8px">Alle Varianten rechnen mit ${num(g.zinsbindung,0)} Jahren Bindung und
       ${num(g.anschlusszins,2)} % Anschlusszins aus der Rechenbasis. Die Rate bleibt nach der Bindung erhalten,
-      die Laufzeit passt sich an. „Zins gesamt“ ist die Summe aller Zinszahlungen bis zur Volltilgung.</p>
+      die Laufzeit passt sich an. „Zins gesamt“ ist die Summe aller Zinszahlungen bis zur Volltilgung.
+      ${w.on?`<br>„EK“ ist das Bar-Eigenkapital; das BHW-Guthaben (${eur(w.guthaben)}) und das BHW-Darlehen
+      (${eur(w.betrag)}) senken die „Darlehen“-Spalte zusätzlich, CF und Rate enthalten die BHW-Rate.`:""}</p>
     </div>
     <div class="box"><h4>Eigenkapital-Hebel</h4>
       <div class="hscroll"><table class="mini"><thead><tr><th class="n">EK</th><th class="n">Darlehen</th><th class="n">CF n. St.</th><th class="n">Depot-Hürde</th></tr></thead><tbody>
@@ -1257,17 +1316,32 @@ function paneFin(r){
       <p class="note" style="margin-top:8px">Mehr Eigenkapital verbessert den Cashflow, aber kaum die Hürde
       gegen das Depot — bei negativem Hebel schichtet man Kapital in die schlechtere Rendite um.</p>
     </div>
-    <div class="box"><h4>Zweitdarlehen (z. B. Bauspar)</h4>
-      ${S.profil.bhwDarlehen>0?`
-      <p class="note">Darlehen ${eur(S.profil.bhwDarlehen)} zu ${num(S.profil.bhwZins,2)} %,
-      Rate ${eur(S.profil.bhwRate)}/M, ohne Grundschuldeintrag — als Nachrang bzw. EK-Ersatz.</p>
-      <table class="mini"><tbody>
-        <tr><td>CF nach Steuern</td><td class="n"><span class="num val-bad">${eurM(r.cfSt)}/M</span></td></tr>
-        <tr><td>+ Rate Zweitdarlehen</td><td class="n"><span class="num">−${eur(S.profil.bhwRate)}/M</span></td></tr>
-        <tr><td><strong>Gesamtbelastung</strong></td><td class="n"><span class="num val-bad"><strong>${eurM(r.cfSt-S.profil.bhwRate)}/M</strong></span></td></tr>
-        ${S.profil.ueberschuss>0?`<tr><td>Anteil am Haushaltsüberschuss</td><td class="n"><span class="num">${num((Math.abs(r.cfSt)+S.profil.bhwRate)/S.profil.ueberschuss*100,0)} %</span></td></tr>`:""}
-      </tbody></table>`:
-      '<p class="note">Kein Zweitdarlehen hinterlegt. Unter „Meine Lage → ändern“ eintragen, wenn du eines einplanst.</p>'}</div>
+    <div class="box${w.on?"":" bhw-off"}"><h4>2. Darlehen (BHW)</h4>
+      <label class="bhw-toggle"><input type="checkbox" data-bhwfield="on" data-id="${o.id}" ${w.on?"checked":""}>
+        in die Rechnung einbeziehen</label>
+      <table class="mini bhw-inp"><tbody>
+        <tr><td>Betrag</td><td class="n"><input type="text" inputmode="decimal" value="${num(w.betrag,0)}"
+          data-bhwfield="betrag" data-id="${o.id}" ${w.on?"":"disabled"} style="width:90px;text-align:right"></td></tr>
+        <tr><td>Zins</td><td class="n"><input type="text" inputmode="decimal" value="${num(w.zins,2)}"
+          data-bhwfield="zins" data-id="${o.id}" ${w.on?"":"disabled"} style="width:60px;text-align:right"> %</td></tr>
+        <tr><td>Rate</td><td class="n"><input type="text" inputmode="decimal" value="${num(w.rate,0)}"
+          data-bhwfield="rate" data-id="${o.id}" ${w.on?"":"disabled"} style="width:70px;text-align:right"> €/M</td></tr>
+        <tr><td>Laufzeit (Hinweis)</td><td class="n"><input type="text" inputmode="decimal" value="${num(w.laufzeit,0)}"
+          data-bhwfield="laufzeit" data-id="${o.id}" ${w.on?"":"disabled"} style="width:48px;text-align:right"> J</td></tr>
+        <tr><td>Bausparguthaben → EK</td><td class="n"><span class="num">${eur(w.guthaben)}</span></td></tr>
+      </tbody></table>
+      ${w.on?`<table class="mini" style="margin-top:9px"><tbody>
+        <tr><td>Bank-Rate</td><td class="n"><span class="num">${eur(r.annuitaet/12)}/M</span></td></tr>
+        <tr><td>+ BHW-Rate</td><td class="n"><span class="num">−${eur(r.bhwRateM)}/M</span></td></tr>
+        <tr><td><strong>Gesamtrate</strong></td><td class="n"><span class="num"><strong>${eur(r.annuitaet/12+r.bhwRateM)}/M</strong></span></td></tr>
+        <tr><td>CF nach Steuern</td><td class="n"><span class="num ${r.cfSt<0?"val-bad":"val-good"}">${eurM(r.cfSt)}/M</span></td></tr>
+        ${S.profil.ueberschuss>0?`<tr><td>Anteil am Haushaltsüberschuss</td><td class="n"><span class="num">${num((Math.abs(Math.min(0,r.cfSt)))/S.profil.ueberschuss*100,0)} %</span></td></tr>`:""}
+      </tbody></table>
+      <p class="note" style="margin-top:8px">Fließt in Cashflow, Verlauf und Depot-Hürde ein: Guthaben
+        ${eur(w.guthaben)} zählt als Eigenkapital, das Bankdarlehen sinkt um ${eur(w.betrag)}.</p>`:
+      `<p class="note" style="margin-top:8px">Ausgegraut = zählt nirgends mit. Die Werte sind die
+        Profil-Vorgaben aus „Meine Lage"; anhaken macht sie für dieses Objekt scharf und editierbar.</p>`}
+    </div>
   </div>`;
 }
 
@@ -1349,6 +1423,14 @@ function bindDetail(){
       }
       else { const n=numDE(inp.value); if(isFinite(n)) v[f]=n; }
       save(); renderTable();
+    }));
+    d.querySelectorAll("[data-bhwfield]").forEach(inp=>inp.addEventListener("change",()=>{
+      const o=S.objekte.find(x=>x.id===inp.dataset.id); if(!o) return;
+      o.bhw=o.bhw||{};
+      const f=inp.dataset.bhwfield;
+      if(f==="on") o.bhw.on=inp.checked;
+      else { const n=numDE(inp.value); if(isFinite(n)) o.bhw[f]=n; }
+      save(); renderTable(); bindDetail();
     }));
     d.addEventListener("click",e=>{
       const b=e.target.closest("[data-act]"); if(!b) return;
