@@ -485,7 +485,7 @@ const PROFIL_FLD=[
 
 /* ---------- Objekt-Vorlage ---------- */
 const OBJ_DEF=()=>({
-  id:uid(), name:"Neues Objekt", strasse:"", plz:"", ort:"Freising", lage:"", status:"pruefen",
+  id:uid(), name:"Neues Objekt", strasse:"", plz:"", ort:"Freising", lage:"", link:"", status:"pruefen",
   kaufpreis:250000, stellplatzpreis:0, zusatzkosten:0, provision:3.57,
   wohnflaeche:60, zimmer:2, etage:"", baujahr:null, sanierung:null, einheiten:null, mea:null,
   energieklasse:"", energiebedarf:null, heizung:"", aufzug:false, balkon:false, stellplatz:false,
@@ -1129,6 +1129,7 @@ function paneEck(r){
     <div class="box"><h4>Objekt</h4>
       ${row("Adresse",esc([o.strasse,[o.plz,o.ort].filter(Boolean).join(" ")].filter(Boolean).join(", ")||"–"))}
       ${row("Lage",esc(o.lage||"–"))}
+      ${o.link?row("Anzeige",`<a href="${esc(o.link)}" target="_blank" rel="noopener noreferrer">${esc(o.link.replace(/^https?:\/\/(www\.)?/,"").replace(/\/+$/,""))}</a>`):""}
       ${row("Fläche / Zimmer",num(o.wohnflaeche,2)+" m² / "+num(o.zimmer,1))}
       ${row("Etage",esc(o.etage||"–"))}
       ${row("Baujahr",o.baujahr?o.baujahr:"unbekannt")}
@@ -1628,6 +1629,7 @@ function openObjDialog(o){
         <label class="fld"><span>Ort</span><input name="ort" ${v("ort")} list="orte"></label>
         <label class="fld"><span>Lage / Wohnlage</span><input name="lage" ${v("lage")}></label>
       </div>
+      <label class="fld" style="margin-top:9px"><span>Link zur Anzeige (Exposé / Inserat)</span><input name="link" type="url" ${v("link")} placeholder="https://…"></label>
       <datalist id="orte">${[...new Set(S.objekte.map(x=>x.ort).concat(["Freising","Ingolstadt","Landshut","Marzling","Moosburg","Neufahrn"]))].map(x=>`<option value="${esc(x)}">`).join("")}</datalist>
     </fieldset>
     <fieldset><legend>Substanz</legend>
@@ -1693,7 +1695,7 @@ function openObjDialog(o){
       const numF=["kaufpreis","stellplatzpreis","provision","zusatzkosten","wohnflaeche","zimmer","baujahr",
         "sanierung","einheiten","mea","energiebedarf","hausgeld","hausgeldNU","verwaltung","ruecklageWEG",
         "istMiete","stellplatzMiete","marktmieteQm","gebaeudeanteil","ekEinsatz","zielpreisManuell"];
-      const txtF=["name","strasse","plz","ort","lage","status","etage","energieklasse","heizung","mietmodell"];
+      const txtF=["name","strasse","plz","ort","lage","link","status","etage","energieklasse","heizung","mietmodell"];
       const boolF=["vermietet","aufzug","balkon","stellplatz","ekAuto"];
       const t=neu?OBJ_DEF():S.objekte.find(x=>x.id===o.id);
       txtF.forEach(k=>{ if(g(k)) t[k]=g(k).value.trim(); });
@@ -1852,7 +1854,9 @@ function exportMd(){
     const o=k.o;
     L.push(`## ${o.name}`,"");
     L.push(`**Status:** ${(STATUS[o.status]||{}).l}  `);
-    L.push(`**Lage:** ${[o.strasse,o.plz,o.ort].filter(Boolean).join(" ")}${o.lage?" — "+o.lage:""}`,"");
+    L.push(`**Lage:** ${[o.strasse,o.plz,o.ort].filter(Boolean).join(" ")}${o.lage?" — "+o.lage:""}  `);
+    if(o.link) L.push(`**Anzeige:** ${o.link}`);
+    L.push("");
     L.push(`| | |`,`|---|---|`);
     L.push(`| Kaufpreis | ${eur(o.kaufpreis)}${o.stellplatzpreis?" + "+eur(o.stellplatzpreis)+" Stellplatz":""} = ${eur(k.qm)}/m² |`);
     L.push(`| Fläche / Zimmer / Etage | ${num(o.wohnflaeche,2)} m² / ${num(o.zimmer,1)} / ${o.etage||"–"} |`);
