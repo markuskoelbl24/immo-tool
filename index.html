@@ -122,7 +122,7 @@ main{padding:20px 0 60px}
   padding:5px 0;border-bottom:1px dotted var(--rule)}
 .stat:last-child{border-bottom:0}
 .stat .k{font-size:.78rem;color:var(--ink-2)}
-.stat .v{font-family:var(--mono);font-variant-numeric:tabular-nums;font-size:.86rem;font-weight:600}
+.stat .v{font-family:var(--mono);font-variant-numeric:tabular-nums;font-size:.86rem;font-weight:600;text-align:right}
 
 /* meter */
 .meter{height:6px;border-radius:3px;background:var(--rule);overflow:hidden;margin-top:5px}
@@ -138,6 +138,7 @@ main{padding:20px 0 60px}
 .pill.neutral{background:var(--card-2);color:var(--ink-2);border:1px solid var(--rule)}
 .pill.accent{background:var(--accent-soft);color:var(--accent)}
 
+.tblhd{margin-bottom:10px}
 /* filter bar */
 .filters{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px}
 .filters select,.filters input{width:auto;min-width:120px}
@@ -161,6 +162,13 @@ tr.detail>td{padding:0;background:var(--card-2)}
 tr.detail.hidden{display:none}
 .objname{font-family:var(--serif);font-weight:600;font-size:.98rem;line-height:1.25}
 .objmeta{font-size:.72rem;color:var(--ink-3)}
+/* Objekt-Titelzeile: eigene Zeile ueber den Kennzahlen, Name links, Lage-Kurzbeschreibung
+   rechts daneben (statt vorher in derselben gedraengten Zeile wie die Zahlenspalten). */
+.objtitle-cell{border-bottom:none!important;padding-bottom:2px!important}
+.objrow{display:flex;justify-content:space-between;align-items:baseline;gap:16px}
+.objrow .objname{flex:0 1 auto}
+.objrow .objmeta{flex:1 1 auto;min-width:0;text-align:right}
+#tbl td.n .num{white-space:nowrap}
 .val-good{color:var(--good);font-weight:700}
 .val-warn{color:var(--warn);font-weight:700}
 .val-bad{color:var(--bad);font-weight:700}
@@ -218,8 +226,21 @@ legend{font-size:.68rem;letter-spacing:.08em;text-transform:uppercase;color:var(
 @media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
 .print-h{display:none}
 @media print{
-  .basis,.mast-actions,.filters,button,.panel,.addrow{display:none!important}
+  .basis,.mast-actions,.filters,button,.panel,.addrow,.tblhd{display:none!important}
   body{background:#fff}
+  /* thead th ist fuers Scrollen am Bildschirm sticky -- beim Drucken bricht das
+     nachweislich (Chrome-Bug-Klasse, wie das Grid-Fragmentieren weiter unten):
+     eine sticky-Kopfzeile "verrutscht" ueber Seiten hinweg an eine falsche Stelle
+     im Fluss. Beim Drucken wird nie gescrollt, sticky wird daher komplett abgeschaltet. */
+  thead th{position:static!important}
+  /* Objekt-Titelzeile: im Druck reicht Name in eigener Zeile, Lage direkt darunter
+     (rechtsbuendig, siehe .objrow .objmeta oben) -- kein Nebeneinander wie am Bildschirm.
+     .objname/.objmeta sind <span> (inline) -- als Flex-Items standen sie automatisch
+     untereinander, als reine Bloecke im display:block-Elternteil aber nicht von allein:
+     erst display:block auf den Spans selbst erzwingt den Zeilenumbruch (per PDF-Test
+     gefunden -- ohne das liefen Name und Lage in einer Zeile zusammen). */
+  .objrow{display:block}
+  .objrow .objname,.objrow .objmeta{display:block}
   /* .tblwrap hat overflow-x:auto (fuer die 16-Objekte-Ansicht am Bildschirm) --
      im Druck kann niemand scrollen, "versteckte" Spalten fielen dadurch komplett
      weg (Status, Depot-Huerde). Tabelle bekommt volle Breite, nichts mehr geclippt. */
@@ -236,12 +257,16 @@ legend{font-size:.68rem;letter-spacing:.08em;text-transform:uppercase;color:var(
   .print-h{display:block!important;font-size:1rem;margin:6px 0 6px;padding-top:4px;
     border-top:2px solid var(--ink);break-before:auto}
   .print-h:first-child{border-top:none;padding-top:0;margin-top:0}
-  /* Kapitel-Einteilung: Eckdaten / Cashflow+Zielpreis zusammen / Finanzierung /
+  /* Kapitel-Einteilung: Eckdaten / Cashflow / Zielpreis+Finanzierung zusammen /
      Bewertung sollen je auf einer eigenen Seite stehen. Bewusst NUR break-after,
      kein break-inside:avoid-page auf der ganzen Rubrik -- das riss frueher die
-     komplette Rubrik auf eine neue, sonst leere Seite statt Seite 1 zu fuellen. */
+     komplette Rubrik auf eine neue, sonst leere Seite statt Seite 1 zu fuellen.
+     Cashflow bekommt jetzt eine eigene Seite (statt mit Zielpreis geteilt), weil
+     der volle Tilgungsplan im Druck ausgeklappt ist (siehe beforeprint-Listener)
+     und dadurch deutlich laenger wird -- Zielpreis teilt sich die Seite stattdessen
+     mit Finanzierung. */
   .tabpane[data-pane="eck"]{break-after:page}
-  .tabpane[data-pane="ziel"]{break-after:page}
+  .tabpane[data-pane="cf"]{break-after:page}
   .tabpane[data-pane="fin"]{break-after:page}
   /* CSS-Grid bricht beim Drucken nachweislich unzuverlaessig um (Chrome-Bug-Klasse:
      Grid-Container fragmentieren nicht sauber über Seitengrenzen -- einzelne Zellen
@@ -251,7 +276,14 @@ legend{font-size:.68rem;letter-spacing:.08em;text-transform:uppercase;color:var(
      weiterhin die volle Zeile fuer sich. */
   .detgrid{display:flex!important;flex-wrap:wrap!important;gap:14px!important}
   .detgrid>.box{flex:1 1 calc(50% - 7px);min-width:0;margin-bottom:0;break-inside:avoid-page}
-  .detgrid>.box[style*="grid-column"]{flex-basis:100%!important}
+  /* Volle-Breite-Kaesten (Verlauf, Darlehensvergleich) duerfen laenger als eine Seite
+     werden (Verlauf mit ausgeklapptem vollen Tilgungsplan z.B. 40+ Zeilen) -- mit
+     break-inside:avoid-page von oben wuerde Chrome den ganzen Kasten auf eine neue,
+     erst mal leere Seite schieben und ihn DANACH doch aufreissen muessen, weil er
+     immer noch nicht auf eine einzelne Seite passt. Ergebnis waere eine sinnlos
+     halbleere Seite plus derselbe Umbruch eine Seite spaeter. break-inside:auto laesst
+     die Tabelle stattdessen dort weiterlaufen, wo noch Platz ist. */
+  .detgrid>.box[style*="grid-column"]{flex-basis:100%!important;break-inside:auto}
   /* Engere Zeilen -- weniger Umbrueche auf zwei Zeilen bei kurzen Werten. */
   .stat{padding:3px 0!important}
   .box{padding:10px 12px!important}
@@ -309,6 +341,7 @@ legend{font-size:.68rem;letter-spacing:.08em;text-transform:uppercase;color:var(
     </aside>
 
     <section>
+      <h2 class="tblhd">Objektübersicht</h2>
       <div class="filters" id="filterBar"></div>
       <div class="tblwrap">
         <table id="tbl">
@@ -859,7 +892,6 @@ function renderStress(){
 
 /* ================= Tabelle ================= */
 const COLS=[
-  {k:"name",l:"Objekt",w:1},
   {k:"ort",l:"Ort"},
   {k:"kpGesamt",l:"Preis",n:1,f:v=>eur(v)},
   {k:"qm",l:"€/m²",n:1,f:v=>eur(v)},
@@ -910,15 +942,16 @@ function renderTable(){
     const st=STATUS[r.o.status]||STATUS.pruefen;
     const offen=S.ui.offen.includes(r.o.id);
     const cells=COLS.map(c=>{
-      if(c.k==="name") return `<td><div class="objname">${esc(r.o.name)}</div>
-        <div class="objmeta">${esc(r.o.lage||r.o.strasse||"")}</div></td>`;
       if(c.k==="status") return `<td><span class="pill ${st.c}">${st.l}</span>${
         r.o.vermietet?'<div class="objmeta" style="margin-top:3px">vermietet</div>':""}</td>`;
       const v=r[c.k];
       const cls=c.c&&isFinite(v)?" "+({good:"val-good",warn:"val-warn",bad:"val-bad"}[c.c(v,r)]||""):"";
       return `<td class="${c.n?"n":""}"><span class="num${cls}">${c.f?c.f(v,r):esc(v??"")}</span></td>`;
     }).join("");
-    return `<tr data-id="${r.o.id}" class="${offen?"open":""}">${cells}</tr>
+    return `<tr class="objtitle-tr ${offen?"open":""}" data-id="${r.o.id}"><td class="objtitle-cell" colspan="${COLS.length}">
+        <div class="objrow"><span class="objname">${esc(r.o.name)}</span><span class="objmeta">${esc(r.o.lage||r.o.strasse||"")}</span></div>
+      </td></tr>
+      <tr data-id="${r.o.id}" class="${offen?"open":""}">${cells}</tr>
       <tr class="detail ${offen?"":"hidden"}" data-det="${r.o.id}"><td colspan="${COLS.length}">
       ${offen?detailHTML(r):""}</td></tr>`;
   }).join("");
@@ -1731,17 +1764,28 @@ document.getElementById("btnReset").addEventListener("click",()=>{
 // CSS allein reicht nicht -- siehe Kommentar bei @media print). Gilt fuer JEDEN Druck,
 // ob ueber den Drucken-Button oder Cmd+P, daher addEventListener statt window.onafterprint
 // (das wuerde die printOnly-Logik des Drucken-Buttons ueberschreiben statt ergaenzen).
+// <details> (Vollstaendiger Tilgungsplan) soll im Druck immer aufgeklappt sein --
+// das CSS-Attribut "open" laesst sich nicht zuverlaessig per CSS erzwingen, daher
+// hier zusammen mit dem Textarea-Fix per JS gesetzt und danach zurueckgesetzt.
 window.addEventListener("beforeprint",()=>{
   document.querySelectorAll("textarea").forEach(ta=>{
     ta.dataset.printH=ta.style.height;
     ta.style.height="auto";
     ta.style.height=(ta.scrollHeight+2)+"px";
   });
+  document.querySelectorAll("details").forEach(d=>{
+    d.dataset.wasOpen=d.open?"1":"";
+    d.open=true;
+  });
 });
 window.addEventListener("afterprint",()=>{
   document.querySelectorAll("textarea").forEach(ta=>{
     ta.style.height=ta.dataset.printH||"";
     delete ta.dataset.printH;
+  });
+  document.querySelectorAll("details").forEach(d=>{
+    d.open=d.dataset.wasOpen==="1";
+    delete d.dataset.wasOpen;
   });
 });
 
