@@ -217,15 +217,10 @@ ul.checks input[type=checkbox]{width:auto;margin-top:2px;accent-color:var(--acce
 ul.checks li.done .txt{text-decoration:line-through;color:var(--ink-3)}
 .addrow{display:flex;gap:6px;margin-top:8px}
 .addrow input{flex:1}
-/* 2. Darlehen (BHW): ausgegraut, bis das Haekchen es scharf schaltet.
-   Bewusst KEIN display:flex am Label -- der Text lief in schmalen Spalten sonst
-   aus dem Kasten. Als normaler Block-Label umbricht er sauber am Kastenrand. */
-.bhw-toggle{display:block;font-size:.8rem;font-weight:600;color:var(--ink-2);
-  cursor:pointer;margin:2px 0 10px;line-height:1.4}
-.bhw-toggle input{width:auto;vertical-align:-2px;margin-right:7px;accent-color:var(--accent)}
-.bhw-off{opacity:.5}
-.bhw-off .bhw-toggle{opacity:1;color:var(--ink-2)}
-.bhw-off input:disabled{background:transparent;border-color:var(--rule-2);color:var(--ink-3);cursor:not-allowed}
+/* Finanzierungsbausteine-Tabelle: inaktive Zeile ausgegraut, Radio/Checkbox schmal */
+.baustein-off{opacity:.45}
+tr.baustein-off input[type=text]{color:var(--ink-3)}
+.mini td input[type=radio],.mini td input[type=checkbox]{width:auto;margin:0;accent-color:var(--accent)}
 /* zwei Blöcke nebeneinander in einem Kasten (BHW-Eingaben+Wirkung, Hebel-Tabelle+Text),
    bricht auf schmalen Screens untereinander */
 .splitrow{display:flex;flex-wrap:wrap;gap:12px 34px;align-items:flex-start}
@@ -486,9 +481,13 @@ const OBJ_DEF=()=>({
   hausgeld:0, hausgeldNU:0, verwaltung:30, ruecklageWEG:null,
   vermietet:false, istMiete:0, stellplatzMiete:0, marktmieteQm:14, mietmodell:"markt",
   gebaeudeanteil:70, ekEinsatz:null, ekAuto:true,
-  zielpreisManuell:null, bhw:{on:false},
+  zielpreisManuell:null,
+  bausteine:[
+    {key:"bhw",name:"BHW",on:false,haupt:false,betrag:null,zins:null,tilgung:null,rate:null,laufzeit:null},
+    {key:"haupt",name:"Hauptdarlehen",on:true,haupt:true,betrag:null,zins:null,tilgung:null,rate:null,laufzeit:null}
+  ],
   staerken:[], schwaechen:[], fragen:[], massnahmen:[], notiz:"",
-  varianten:[], geschaetzt:[]
+  geschaetzt:[]
 });
 /* Felder, die als Schätzung/Annahme markierbar sind (Checkbox im Bearbeiten-Dialog,
    Markierung in Anzeige + Export). Bewusst nur die, die tatsächlich geschätzt werden —
@@ -506,19 +505,63 @@ const STATUS={
 /* ================= RECHENKERN ================= */
 function afaSatzFor(o){ return (o.baujahr && o.baujahr<1925)?2.5:2.0; }
 
-/* BHW / 2. Darlehen: pro Objekt in o.bhw, fehlende Werte aus den Profil-Vorgaben.
-   Solange o.bhw.on nicht gesetzt ist, liefert das on:false -> überall Beitrag null. */
-function bhwFor(o){
-  const d=S.profil||{}, b=(o&&o.bhw)||{};
-  const v=(x,y)=>(x==null||x==="")?(+y||0):(+x||0);
-  return {
-    on: !!b.on,
-    betrag: v(b.betrag, d.bhwDarlehen),
-    zins:   v(b.zins,   d.bhwZins),
-    rate:   v(b.rate,   d.bhwRate),
-    laufzeit: v(b.laufzeit, d.bhwLaufzeit||12),
-    guthaben: +d.bhwGuthaben||0
-  };
+/* Finanzierungsbausteine: o.bausteine = [{key,name,on,haupt,betrag,zins,tilgung,rate,laufzeit}].
+   - haupt:true -> "Restfinanzierer": Betrag = Gesamtinvestition - EK - Summe der übrigen Bausteine.
+     Genau einer aktiver Baustein ist haupt.
+   - betrag gesetzt -> Fixbetrag-Baustein (BHW, KfW, ...). rate gesetzt -> feste Monatsrate,
+     sonst Annuität aus zins+tilgung.
+   - key "bhw" ist besonders: Vorgaben aus dem Profil, sein Guthaben zählt als EK.
+   bausteineFor() liefert die aufgelöste Liste (mit Profil-Defaults, genau ein haupt) und
+   migriert altdaten (o.bhw / o.varianten) rein lesend -- geschrieben wird erst beim Edit. */
+function bausteineFor(o){
+  const d=S.profil||{}, g=S.basis||{};
+  let list = (o.bausteine && o.bausteine.length) ? o.bausteine.map(b=>({...b})) : null;
+  if(!list){
+    const alt=(o&&o.bhw)||{};
+    const bhwOn=!!alt.on;
+    list=[
+      {key:"bhw",name:"BHW",on:bhwOn,haupt:false,
+       betrag:alt.betrag??null,zins:alt.zins??null,tilgung:null,rate:alt.rate??null,laufzeit:alt.laufzeit??null},
+      {key:"haupt",name:"Hauptdarlehen",on:true,haupt:true,
+       betrag:null,zins:null,tilgung:null,rate:null,laufzeit:null},
+      ...((o&&o.varianten)||[]).map(v=>({key:uid(),name:v.name||"Variante",on:false,haupt:false,
+       betrag:null,zins:+v.zins||null,tilgung:+v.tilgung||null,rate:null,laufzeit:v.laufzeit??null}))
+    ];
+  }
+  list.forEach(b=>{
+    if(b.key==="bhw"){
+      if(b.betrag==null||b.betrag==="")   b.betrag=+d.bhwDarlehen||0;
+      if(b.zins==null||b.zins==="")       b.zins=+d.bhwZins||0;
+      if(b.rate==null||b.rate==="")       b.rate=+d.bhwRate||0;
+      if(b.laufzeit==null||b.laufzeit==="")b.laufzeit=+d.bhwLaufzeit||12;
+    }
+    if(b.haupt){
+      if(b.zins==null||b.zins==="")       b.zins=+g.zins||0;
+      if(b.tilgung==null||b.tilgung==="") b.tilgung=+g.tilgung||0;
+    }
+  });
+  // genau ein haupt (bevorzugt ein aktiver, sonst der erste)
+  if(list.filter(b=>b.haupt).length!==1){
+    list.forEach(b=>b.haupt=false);
+    const pick=list.find(b=>b.on&&(b.betrag==null||b.betrag===0))||list.find(b=>b.on)||list[0];
+    if(pick) pick.haupt=true;
+  }
+  return list;
+}
+/* Monatsrate eines Bausteins (haupt bekommt den Restbetrag als Argument) */
+function bausteinRateM(b,restBetrag){
+  const betr=b.haupt?(+restBetrag||0):(+b.betrag||0);
+  if(betr<=0) return 0;
+  if(b.rate>0 && !b.haupt) return +b.rate;
+  return betr*((+b.zins||0)+(+b.tilgung||0))/100/12;
+}
+/* Bausteine dauerhaft an das Objekt schreiben (beim ersten Edit) und Altfelder entfernen */
+function ensureBausteine(o){
+  if(!o.bausteine || !o.bausteine.length){
+    o.bausteine=bausteineFor(o);
+    delete o.bhw; delete o.varianten;
+  }
+  return o.bausteine;
 }
 
 function basis(o,g){
@@ -535,18 +578,22 @@ function basis(o,g){
   const eigeneIH=(+o.wohnflaeche||0)*(+g.ihRuecklage||0)/12;
   const ausfall=miete*(+g.mietausfall||0)/100;
   const nettoMiete=miete-hgNU-eigeneIH-ausfall;
-  // 2. Darlehen (BHW): Guthaben ist echtes EK, das Darlehen senkt den Bankkredit.
-  const bhw=bhwFor(o);
-  const bhwBetrag=bhw.on?bhw.betrag:0;
-  const bhwGut=bhw.on?bhw.guthaben:0;
-  const bhwRateM=bhw.on?bhw.rate:0;
+  // Finanzierungsbausteine: Fixbetrag-Bausteine + genau ein Hauptdarlehen (= Restsumme).
+  const bausteine=bausteineFor(o);
+  const aktiv=bausteine.filter(b=>b.on);
+  const guthaben=aktiv.some(b=>b.key==="bhw")?(+S.profil.bhwGuthaben||0):0;
   const ekCash=o.ekAuto?knk:(+o.ekEinsatz||0);
-  const ek=ekCash+bhwGut;
-  const darlehen=Math.max(0,gi-ek-bhwBetrag);      // Bankdarlehen, 1. Rang
-  const schuldGesamt=darlehen+bhwBetrag;
-  const bhwZinsJ1=bhwBetrag*(bhw.zins||0)/100;
-  const zinsJ1=darlehen*(+g.zins||0)/100+bhwZinsJ1;  // gesamter absetzbarer Zins Jahr 1
-  const annuitaet=darlehen*((+g.zins||0)+(+g.tilgung||0))/100;  // Bank-Annuität, jährlich
+  const ek=ekCash+guthaben;
+  const fix=aktiv.filter(b=>!b.haupt);
+  const fixSumme=fix.reduce((s,b)=>s+(+b.betrag||0),0);
+  const hauptB=aktiv.find(b=>b.haupt)||null;
+  const hZins=hauptB?(+hauptB.zins||0):(+g.zins||0);
+  const hTilg=hauptB?(+hauptB.tilgung||0):(+g.tilgung||0);
+  const darlehen=Math.max(0,gi-ek-fixSumme);        // Hauptdarlehen = Restsumme
+  const schuldGesamt=darlehen+fixSumme;
+  const annuitaet=(hauptB?bausteinRateM(hauptB,darlehen):0)*12;  // Hauptdarlehens-Rate, jährlich
+  const zusatzRateM=fix.reduce((s,b)=>s+bausteinRateM(b),0);     // Summe der Fix-Bausteine, monatlich
+  const zinsJ1=darlehen*hZins/100 + fix.reduce((s,b)=>s+(+b.betrag||0)*(+b.zins||0)/100,0); // ges. absetzbarer Zins Jahr 1
   // Außenstellplatz = Grund und Boden, nicht abschreibbar
   const bauAnteil=kpGesamt>0?((+o.kaufpreis||0)/kpGesamt):1;
   const afaSatz=afaSatzFor(o);
@@ -554,7 +601,7 @@ function basis(o,g){
   const afa=afaBasis*afaSatz/100;
   return {kpGesamt,knk,knkSatz,gi,kalt,miete,marktMiete,jahresmiete,hgNU,eigeneIH,ausfall,
           nettoMiete,ek,ekCash,darlehen,schuldGesamt,zinsJ1,annuitaet,afa,afaSatz,afaBasis,spm,
-          bhw,bhwBetrag,bhwGut,bhwRateM,bhwZinsJ1};
+          bausteine,bausteineAktiv:aktiv,hauptB,hZins,hTilg,guthaben,fixSumme,zusatzRateM};
 }
 
 function kennzahlen(o,g){
@@ -563,7 +610,7 @@ function kennzahlen(o,g){
   const faktorGI=b.jahresmiete>0?b.gi/b.jahresmiete:NaN;
   const brutto=b.kpGesamt>0?b.jahresmiete/b.kpGesamt*100:NaN;
   const netto=b.gi>0?b.nettoMiete*12/b.gi*100:NaN;
-  const cfOp=b.nettoMiete-b.annuitaet/12-b.bhwRateM;
+  const cfOp=b.nettoMiete-b.annuitaet/12-b.zusatzRateM;
   const stErg=b.jahresmiete-(+o.verwaltung||0)*12-b.zinsJ1-b.afa;
   const steuer=stErg*(+g.steuersatz||0)/100;
   const cfSt=cfOp-steuer/12;
@@ -573,7 +620,7 @@ function kennzahlen(o,g){
   if(o.vermietet && b.marktMiete>b.miete){
     const p={...o,vermietet:false,marktmieteQm:+o.marktmieteQm};
     const bp=basis(p,g);
-    const cfOpP=bp.nettoMiete-bp.annuitaet/12-bp.bhwRateM;
+    const cfOpP=bp.nettoMiete-bp.annuitaet/12-bp.zusatzRateM;
     const stP=(bp.jahresmiete-(+o.verwaltung||0)*12-bp.zinsJ1-bp.afa)*(+g.steuersatz||0)/100;
     cfPot=cfOpP-stP/12; faktorPot=bp.kpGesamt/bp.jahresmiete;
   }
@@ -625,14 +672,17 @@ function mietePfad(o,g,jahre){
 
 function projektion(o,g,jahre){
   const b=basis(o,g);
-  const plan=amortisation(b.darlehen,+g.zins,+g.tilgung,+g.zinsbindung,+g.anschlusszins,Math.max(jahre,45));
-  // 2. Darlehen (BHW): über die feste Rate den Tilgungssatz herleiten, eigener Plan,
-  // keine Zinsbindungs-Umstellung. bhwPlan[j-1] undefined -> ab da kein BHW mehr (Rate faellt weg).
-  let bhwPlan=[];
-  if(b.bhwBetrag>0){
-    const tp=Math.max(0.05, b.bhwRateM*12/b.bhwBetrag*100-(b.bhw.zins||0));
-    bhwPlan=amortisation(b.bhwBetrag,b.bhw.zins||0,tp,0,null,Math.max(jahre,45));
-  }
+  const N=Math.max(jahre,45);
+  const plan=amortisation(b.darlehen,b.hZins,b.hTilg,+g.zinsbindung,+g.anschlusszins,N);
+  // Fix-Bausteine: je eigener Plan, feste Rate -> Tilgungssatz herleiten, keine Zinsbindungs-Umstellung.
+  // fixPlaene[k][j-1] undefined -> Baustein ist getilgt, seine Rate faellt ab da weg (Knick im CF).
+  const fixPlaene=b.bausteineAktiv.filter(x=>!x.haupt).map(x=>{
+    const betr=+x.betrag||0; if(betr<=0) return [];
+    const tp = x.rate>0
+      ? Math.max(0.05, (+x.rate)*12/betr*100-(+x.zins||0))
+      : (+x.tilgung||0);
+    return amortisation(betr,+x.zins||0,tp,0,null,N);
+  });
   const mieten=mietePfad(o,g,jahre);
   const eskK=1+(+g.kostensteigerung||0)/100;
   const rows=[]; let kum=0;
@@ -642,21 +692,21 @@ function projektion(o,g,jahre){
     const hg=(+o.hausgeldNU||0)*12*f;
     const ih=(+o.wohnflaeche||0)*(+g.ihRuecklage||0)*f;
     const af=miete*(+g.mietausfall||0)/100;
-    const p=plan[j-1]||{zins:0,tilgung:0,rest:0,zinssatz:+g.zins};
-    const bp=bhwPlan[j-1]||{zins:0,tilgung:0,rest:0};
-    const cfOp=miete-hg-ih-af-p.zins-p.tilgung-bp.zins-bp.tilgung;
-    const stErg=miete-(+o.verwaltung||0)*12*f-p.zins-bp.zins-b.afa;
+    const p=plan[j-1]||{zins:0,tilgung:0,rest:0,zinssatz:b.hZins};
+    let fz=0,ft=0,fr=0;
+    fixPlaene.forEach(pl=>{ const e=pl[j-1]||{zins:0,tilgung:0,rest:0}; fz+=e.zins; ft+=e.tilgung; fr+=e.rest; });
+    const cfOp=miete-hg-ih-af-p.zins-p.tilgung-fz-ft;
+    const stErg=miete-(+o.verwaltung||0)*12*f-p.zins-fz-b.afa;
     const st=stErg*(+g.steuersatz||0)/100;
     const cf=cfOp-st;
     kum+=cf;
     const wert=b.kpGesamt*Math.pow(1+(+g.wertsteigerung||0)/100,j);
-    const rest=p.rest+bp.rest;
-    rows.push({jahr:j,miete,hg,ih,af,zins:p.zins+bp.zins,tilgung:p.tilgung+bp.tilgung,zinssatz:p.zinssatz,
-      bhwZins:bp.zins,bhwTilgung:bp.tilgung,bhwRest:bp.rest,
+    const rest=p.rest+fr;
+    rows.push({jahr:j,miete,hg,ih,af,zins:p.zins+fz,tilgung:p.tilgung+ft,zinssatz:p.zinssatz,
       afa:b.afa,steuer:-st,cfOp,cf,kum,rest,wert,ek:wert-rest});
   }
   const laufzeit=plan.length&&plan[plan.length-1].rest<=0.005?plan[plan.length-1].jahr:null;
-  return {rows,plan,bhwPlan,laufzeit,b};
+  return {rows,plan,fixPlaene,laufzeit,b};
 }
 
 /* Depot-Hürde: ab welcher Wertsteigerung schlägt das Objekt den Sparplan? */
@@ -1086,10 +1136,12 @@ function paneEck(r){
       ${row("Kaufnebenkosten gesamt",`<span class="val-warn">${eur(r.knk)}</span> (${pct(r.knkSatz*100)})`)}
       ${o.zusatzkosten?row("Zusatzkosten (Küche o.ä.)",eur(o.zusatzkosten)):""}
       ${row("Gesamtinvestition",`<strong>${eur(r.gi)}</strong>`)}
-      ${row("Eigenkapital-Einsatz",r.bhwGut>0?`${eur(r.ek)} <span style="opacity:.7">(${eur(r.ekCash)} + ${eur(r.bhwGut)} BHW)</span>`:eur(r.ek)+(o.ekAuto?" (= KNK)":""))}
-      ${r.bhwBetrag>0
-        ? row("Darlehen Bank",eur(r.darlehen))+row("Darlehen BHW",`${eur(r.bhwBetrag)} <span style="opacity:.7">· ${num(r.bhw.zins,2)} %</span>`)
-        : row("Darlehen",eur(r.darlehen))}
+      ${row("Eigenkapital-Einsatz",r.guthaben>0?`${eur(r.ek)} <span style="opacity:.7">(${eur(r.ekCash)} + ${eur(r.guthaben)} BHW-Guthaben)</span>`:eur(r.ek)+(o.ekAuto?" (= KNK)":""))}
+      ${(()=>{ const fix=r.bausteineAktiv.filter(x=>!x.haupt);
+        return fix.length
+          ? row("Darlehen "+esc(r.hauptB?r.hauptB.name:"Haupt"),eur(r.darlehen))
+            + fix.map(x=>row("Darlehen "+esc(x.name),`${eur(+x.betrag||0)} <span style="opacity:.7">· ${num(x.zins,2)} %</span>`)).join("")
+          : row("Darlehen",eur(r.darlehen)); })()}
     </div>
     <div class="box"><h4>Miete &amp; Rendite</h4>
       ${row(o.vermietet?"Ist-Kaltmiete":"Marktmiete (Ansatz)",eur(r.kalt)+"/M"+schaetz(o.vermietet?"istMiete":"marktmieteQm"))}
@@ -1137,21 +1189,21 @@ function paneCf(r){
         ${line("− eigene IH-Rücklage ("+num(g.ihRuecklage,0)+" €/m²a)","−"+eur(r.eigeneIH))}
         ${line("− Mietausfall "+num(g.mietausfall,1)+" %","−"+eur(r.ausfall))}
         ${line("<strong>= Netto-Mieteinnahme</strong>","<strong>"+eur(r.nettoMiete)+"</strong>")}
-        ${line("− Annuität ("+num(g.zins,2)+" % + "+num(g.tilgung,1)+" %)","−"+eur(r.annuitaet/12))}
-        ${r.bhwRateM>0?line("− Rate 2. Darlehen (BHW, "+num(r.bhw.zins,2)+" %)","−"+eur(r.bhwRateM)):""}
+        ${line("− Rate "+esc(r.hauptB?r.hauptB.name:"Hauptdarlehen")+" ("+num(r.hZins,2)+" % + "+num(r.hTilg,1)+" %)","−"+eur(r.annuitaet/12))}
+        ${r.bausteineAktiv.filter(x=>!x.haupt).map(x=>line("− Rate "+esc(x.name)+" ("+num(x.zins,2)+" %)","−"+eur(bausteinRateM(x)))).join("")}
         ${line("<strong>= CF operativ</strong>","<strong>"+eurM(r.cfOp)+"</strong>",r.cfOp<0?"val-bad":"val-good")}
         ${line("+ Steuererstattung","+"+eurM(r.steuerMonat),"val-good")}
         ${line("<strong>= CF nach Steuern</strong>","<strong>"+eurM(r.cfSt)+"</strong>",r.cfSt<0?"val-bad":"val-good")}
         ${isFinite(r.cfPot)?line("CF bei Marktmiete",eurM(r.cfPot),"val-warn"):""}
       </tbody></table>
-      <p class="note" style="margin-top:8px">Davon ${eur(r.annuitaet/12*(g.tilgung/(g.zins+g.tilgung))+Math.max(0,r.bhwRateM-r.bhwZinsJ1/12))}/M Tilgung —
+      <p class="note" style="margin-top:8px">Davon ${eur(r.annuitaet/12*(r.hTilg/(r.hZins+r.hTilg||1))+r.bausteineAktiv.filter(x=>!x.haupt).reduce((s,x)=>s+Math.max(0,bausteinRateM(x)-(+x.betrag||0)*(+x.zins||0)/100/12),0))}/M Tilgung —
       also Vermögensaufbau, nicht Verlust.</p>
     </div>
 
     <div class="box"><h4>${d.N} Jahre — Bilanz</h4>
       <table class="mini"><tbody>
         ${line("Eigenkapital-Einsatz",eur(r.ek))}
-        ${r.bhwGut>0?line('<span style="opacity:.7">davon BHW-Guthaben</span>','<span style="opacity:.7">'+eur(r.bhwGut)+'</span>'):""}
+        ${r.guthaben>0?line('<span style="opacity:.7">davon BHW-Guthaben</span>','<span style="opacity:.7">'+eur(r.guthaben)+'</span>'):""}
         ${line("+ Zuschüsse über "+d.N+" Jahre",eur(d.eingezahlt-r.ek))}
         ${line("<strong>= eingesetztes Kapital</strong>","<strong>"+eur(d.eingezahlt)+"</strong>")}
         ${line("Tilgungsleistung",eur(d.tilgung),"val-good")}
@@ -1184,11 +1236,11 @@ function paneCf(r){
           <td class="n"><span class="num">${eur(x.wert)}</span></td>
           <td class="n"><span class="num ${x.ek>0?"val-good":"val-bad"}">${eur(x.ek)}</span></td></tr>`).join("")}
       </tbody></table></div>
-      ${r.bhwBetrag>0?`<p class="note" style="margin-top:8px">Zins / Tilgung / Restschuld / Eigenkapital
-        enthalten das 2. Darlehen (BHW). Die Rate sinkt um ${eur(r.bhwRateM)}/M, sobald es getilgt ist
-        (nach ~${bhwFor(o).laufzeit} Jahren).</p>`:""}
+      ${r.bausteineAktiv.filter(x=>!x.haupt).length?`<p class="note" style="margin-top:8px">Zins / Tilgung / Restschuld / Eigenkapital
+        enthalten alle aktiven Bausteine. Die Rate sinkt um ${eur(r.zusatzRateM)}/M, sobald die
+        Zusatz-Bausteine getilgt sind.</p>`:""}
       <details style="margin-top:10px"><summary style="cursor:pointer;font-size:.8rem;color:var(--accent);font-weight:600">
-        Vollständige Tilgung ${r.bhwBetrag>0?"des Bankdarlehens":"bis zur Schuldenfreiheit"}${pr.laufzeit?" — "+pr.laufzeit+" Jahre":""}</summary>
+        Vollständige Tilgung ${r.bausteineAktiv.filter(x=>!x.haupt).length?"des Hauptdarlehens":"bis zur Schuldenfreiheit"}${pr.laufzeit?" — "+pr.laufzeit+" Jahre":""}</summary>
         <div style="overflow-x:auto;margin-top:9px"><table class="mini"><thead><tr>
           <th>Jahr</th><th class="n">Zinssatz</th><th class="n">Rate/M</th><th class="n">Zins</th>
           <th class="n">Tilgung</th><th class="n">Restschuld</th></tr></thead><tbody>
@@ -1261,102 +1313,73 @@ function paneZiel(r){
   </div>`;
 }
 
-/* Sucht die Tilgung, die bei gegebenem Zins/EK die Ziel-Laufzeit ergibt
-   (Laufzeit sinkt streng monoton mit steigender Tilgung). */
-function tilgungFuerLaufzeit(o,g,zins,ek,zielJahre){
-  const laufzeitBei=t=>{
-    const oo={...o,ekAuto:false,ekEinsatz:ek};
-    const gg={...g,zins,tilgung:t};
-    return projektion(oo,gg,45).laufzeit;
-  };
-  let lo=0.1,hi=20;
-  for(let i=0;i<40;i++){
-    const mid=(lo+hi)/2, l=laufzeitBei(mid);
-    if(l===null||l>zielJahre) lo=mid; else hi=mid;
-  }
-  return Math.round((lo+hi)/2*100)/100;
-}
-
 function paneFin(r){
   const o=r.o,g=S.basis;
-  const w=bhwFor(o);
-  // ek hier = Bar-EK (ohne BHW-Guthaben) -- basis() legt das Guthaben bei aktivem BHW
-  // selbst dazu, sonst wuerde es beim Durchreichen als ekEinsatz doppelt zaehlen.
-  const varianten=[{name:"Rechenbasis",zins:+g.zins,tilgung:+g.tilgung,ek:r.ekCash},
-    ...(o.varianten||[])];
-  const rows=varianten.map(v=>{
-    const oo={...o,ekAuto:false,ekEinsatz:v.ek};
-    const gg={...g,zins:v.zins,tilgung:v.tilgung};
-    const k=kennzahlen(oo,gg), pr=projektion(oo,gg,45);
-    const zinsSumme=pr.plan.reduce((s,p)=>s+p.zins,0);
-    return {v,k,laufzeit:pr.laufzeit,zinsSumme,rest10:(pr.plan[9]||{}).rest};
-  });
+  const bl=r.bausteine;
+  const pr=projektion(o,g,Math.max(+g.horizont||10,1));
+  const hauptFehlt=!bl.some(b=>b.on&&b.haupt);
+  const rateGes=r.annuitaet/12+r.zusatzRateM;
+  const rM=x=>x.haupt?r.annuitaet/12:bausteinRateM(x);
+  const zeile=x=>`<tr class="${x.on?"":"baustein-off"}">
+    <td class="n"><input type="radio" name="bhaupt-${o.id}" ${x.haupt?"checked":""} data-act="bhaupt" data-id="${o.id}" data-k="${x.key}" title="Hauptdarlehen — Betrag = Restsumme"></td>
+    <td class="n"><input type="checkbox" ${x.on?"checked":""} data-act="btoggle" data-id="${o.id}" data-k="${x.key}"></td>
+    <td><input value="${esc(x.name)}" data-bfield="name" data-id="${o.id}" data-k="${x.key}" style="width:100%;min-width:96px"></td>
+    <td class="n">${x.haupt
+      ? `<span class="num">${eur(r.darlehen)}</span>`
+      : `<input type="text" inputmode="decimal" value="${num(+x.betrag||0,0)}" data-bfield="betrag" data-id="${o.id}" data-k="${x.key}" style="width:82px;text-align:right">`}</td>
+    <td class="n"><input type="text" inputmode="decimal" value="${num(+x.zins||0,2)}" data-bfield="zins" data-id="${o.id}" data-k="${x.key}" style="width:54px;text-align:right"> %</td>
+    <td class="n">${(x.rate>0 && !x.haupt)
+      ? `<input type="text" inputmode="decimal" value="${num(+x.rate||0,0)}" data-bfield="rate" data-id="${o.id}" data-k="${x.key}" style="width:56px;text-align:right"> €/M`
+      : `<input type="text" inputmode="decimal" value="${num(x.tilgung!=null?+x.tilgung:r.hTilg,1)}" data-bfield="tilgung" data-id="${o.id}" data-k="${x.key}" style="width:42px;text-align:right"> %`}</td>
+    <td class="n">${x.laufzeit?num(+x.laufzeit,0)+" J":(x.haupt?(pr.laufzeit?pr.laufzeit+" J":"&gt;45"):"–")}</td>
+    <td class="n"><span class="num">${x.on?eur(rM(x)):"–"}</span></td>
+    <td class="n">${(x.key==="bhw"||x.haupt)?"":`<button class="tiny ghost" data-act="bdel" data-id="${o.id}" data-k="${x.key}">✕</button>`}</td>
+  </tr>`;
   return `<div class="detgrid">
-    <div class="box" style="grid-column:1/-1"><h4>Darlehensvergleich</h4>
+    <div class="box" style="grid-column:1/-1"><h4>Finanzierungsbausteine</h4>
+      <p class="note" style="margin:0 0 8px">Rechenbasis: ${num(g.zins,2)} % Zins · ${num(g.tilgung,1)} % Tilgung ·
+        ${num(g.zinsbindung,0)} J Bindung / ${num(g.anschlusszins,2)} % Anschluss — Vorlage für neue Zeilen, kein Baustein.</p>
       <div class="hscroll"><table class="mini"><thead><tr>
-        <th>Variante</th><th class="n">Zins</th><th class="n">Tilgung</th><th class="n">EK</th>
-        <th class="n">Darlehen</th><th class="n">Rate/M</th><th class="n">CF n. St.</th>
-        <th class="n">Restschuld J10</th><th class="n">Laufzeit</th><th class="n">Zins gesamt</th><th></th>
-      </tr></thead><tbody>
-      ${rows.map((x,i)=>`<tr>
-        <td>${i>0?`<input value="${esc(x.v.name)}" data-vfield="name" data-id="${o.id}" data-i="${i-1}" style="width:100%;min-width:120px">`:esc(x.v.name)}</td>
-        <td class="n">${i>0?`<input type="text" inputmode="decimal" value="${num(x.v.zins,2)}" data-vfield="zins" data-id="${o.id}" data-i="${i-1}" style="width:56px;text-align:right">`:`<span class="num">${num(x.v.zins,2)} %</span>`}</td>
-        <td class="n">${i>0?`<input type="text" inputmode="decimal" value="${num(x.v.tilgung,1)}" data-vfield="tilgung" data-id="${o.id}" data-i="${i-1}" style="width:56px;text-align:right">`:`<span class="num">${num(x.v.tilgung,1)} %</span>`}</td>
-        <td class="n">${i>0?`<input type="text" inputmode="decimal" value="${num(x.v.ek,0)}" data-vfield="ek" data-id="${o.id}" data-i="${i-1}" style="width:80px;text-align:right">`:`<span class="num">${eur(x.v.ek)}</span>`}</td>
-        <td class="n"><span class="num">${eur(x.k.darlehen)}</span></td>
-        <td class="n"><span class="num">${eur(x.k.annuitaet/12)}</span></td>
-        <td class="n"><span class="num ${x.k.cfSt<0?"val-bad":"val-good"}">${eurM(x.k.cfSt)}</span></td>
-        <td class="n"><span class="num">${isFinite(x.rest10)?eur(x.rest10):"–"}</span></td>
-        <td class="n">${i>0?`<input type="text" inputmode="decimal" value="${x.laufzeit??''}" placeholder="${x.laufzeit?'':'>45'}" data-vfield="laufzeit" data-id="${o.id}" data-i="${i-1}" style="width:48px;text-align:right" title="Ziel-Laufzeit in Jahren eintragen — setzt die Tilgung passend dazu">`:`<span class="num">${x.laufzeit?x.laufzeit+" J":"&gt;45 J"}</span>`}</td>
-        <td class="n"><span class="num">${eur(x.zinsSumme)}</span></td>
-        <td class="n">${i>0?`<button class="tiny ghost" data-act="delvar" data-id="${o.id}" data-i="${i-1}">✕</button>`
-          :`<button class="tiny ghost" data-act="varfrombasis" data-id="${o.id}" title="Als eigene Variante übernehmen und anpassen">→ Variante</button>`}</td>
-      </tr>`).join("")}
-      </tbody></table></div>
-      <div class="addrow" style="flex-wrap:wrap;max-width:640px">
-        <input placeholder="Name, z. B. Bank B / 15 J" data-v="name" style="min-width:150px">
-        <input type="text" inputmode="decimal" placeholder="Zins %" data-v="zins" style="max-width:90px">
-        <input type="text" inputmode="decimal" placeholder="Tilgung %" data-v="tilgung" style="max-width:100px">
-        <input type="text" inputmode="decimal" placeholder="EK €" data-v="ek" style="max-width:110px">
-        <button class="tiny primary" data-act="addvar" data-id="${o.id}">+ Variante</button>
+        <th class="n" title="Hauptdarlehen (Betrag = Restsumme)">Rest</th><th class="n">aktiv</th><th>Name</th>
+        <th class="n">Betrag</th><th class="n">Zins</th><th class="n">Tilg./Rate</th><th class="n">Laufzeit</th><th class="n">Rate/M</th><th></th>
+      </tr></thead><tbody>${bl.map(zeile).join("")}</tbody></table></div>
+      <div class="addrow" style="flex-wrap:wrap;max-width:560px">
+        <input placeholder="Name, z. B. Bank B / 15 J" data-bnew="name" style="min-width:150px">
+        <input type="text" inputmode="decimal" placeholder="Zins %" data-bnew="zins" style="max-width:84px">
+        <input type="text" inputmode="decimal" placeholder="Tilgung %" data-bnew="tilgung" style="max-width:96px">
+        <button class="tiny primary" data-act="badd" data-id="${o.id}">+ Baustein</button>
       </div>
-      <p class="note" style="margin-top:8px">Alle Varianten rechnen mit ${num(g.zinsbindung,0)} Jahren Bindung und
-      ${num(g.anschlusszins,2)} % Anschlusszins aus der Rechenbasis. Die Rate bleibt nach der Bindung erhalten,
-      die Laufzeit passt sich an. „Zins gesamt“ ist die Summe aller Zinszahlungen bis zur Volltilgung.
-      ${w.on?`<br>„EK“ ist das Bar-Eigenkapital; das BHW-Guthaben (${eur(w.guthaben)}) und das BHW-Darlehen
-      (${eur(w.betrag)}) senken die „Darlehen“-Spalte zusätzlich, CF und Rate enthalten die BHW-Rate.`:""}</p>
+      <table class="mini kv" style="margin-top:10px;max-width:340px"><tbody>
+        <tr><td>Bar-Eigenkapital</td><td class="n"><input type="text" inputmode="decimal" value="${num(r.ekCash,0)}"
+          data-bfield="ekcash" data-id="${o.id}" style="width:92px;text-align:right"> €</td></tr>
+        ${r.guthaben>0?`<tr><td>+ BHW-Guthaben</td><td class="n"><span class="num">${eur(r.guthaben)}</span></td></tr>`:""}
+        <tr><td><strong>= Eigenkapital gesamt</strong></td><td class="n"><span class="num"><strong>${eur(r.ek)}</strong></span></td></tr>
+      </tbody></table>
+      <p class="note" style="margin-top:8px">„Rest" markiert das Hauptdarlehen — Betrag = Gesamtinvestition −
+        Eigenkapital − übrige aktive Bausteine. Fixbetrag-Bausteine (BHW …) bekommen ihren Betrag eingetragen.
+        Eine weitere Bank-Zeile anlegen, altes Häkchen raus, neues rein → so wird verglichen.</p>
     </div>
-    <div class="box${w.on?"":" bhw-off"}" style="grid-column:1/-1"><h4>2. Darlehen (BHW)</h4>
-      <label class="bhw-toggle"><input type="checkbox" data-bhwfield="on" data-id="${o.id}" ${w.on?"checked":""}>
-        in die Rechnung einbeziehen</label>
+
+    <div class="box" style="grid-column:1/-1"><h4>So sieht dein Plan aus</h4>
+      ${hauptFehlt?'<p class="note warnbox" style="margin:0 0 8px">Kein Hauptdarlehen aktiv — die Restsumme ist nicht gedeckt.</p>':""}
       <div class="splitrow">
         <table class="mini kv"><tbody>
-          <tr><td>Betrag</td><td class="n"><input type="text" inputmode="decimal" value="${num(w.betrag,0)}"
-            data-bhwfield="betrag" data-id="${o.id}" ${w.on?"":"disabled"} style="width:88px;text-align:right"> €</td></tr>
-          <tr><td>Zins</td><td class="n"><input type="text" inputmode="decimal" value="${num(w.zins,2)}"
-            data-bhwfield="zins" data-id="${o.id}" ${w.on?"":"disabled"} style="width:52px;text-align:right"> %</td></tr>
-          <tr><td>Rate</td><td class="n"><input type="text" inputmode="decimal" value="${num(w.rate,0)}"
-            data-bhwfield="rate" data-id="${o.id}" ${w.on?"":"disabled"} style="width:60px;text-align:right"> €/M</td></tr>
-          <tr><td>Laufzeit (Hinweis)</td><td class="n"><input type="text" inputmode="decimal" value="${num(w.laufzeit,0)}"
-            data-bhwfield="laufzeit" data-id="${o.id}" ${w.on?"":"disabled"} style="width:40px;text-align:right"> J</td></tr>
-          <tr><td>Bausparguthaben → EK</td><td class="n"><span class="num">${eur(w.guthaben)}</span></td></tr>
+          <tr><td>Darlehen gesamt</td><td class="n"><span class="num">${eur(r.schuldGesamt)}</span></td></tr>
+          <tr><td>Rate gesamt</td><td class="n"><span class="num">${eur(rateGes)}/M</span></td></tr>
+          <tr><td><strong>CF nach Steuern</strong></td><td class="n"><span class="num ${r.cfSt<0?"val-bad":"val-good"}"><strong>${eurM(r.cfSt)}/M</strong></span></td></tr>
+          ${S.profil.ueberschuss>0?`<tr><td>Anteil Haushaltsüberschuss</td><td class="n"><span class="num">${num(Math.abs(Math.min(0,r.cfSt))/S.profil.ueberschuss*100,0)} %</span></td></tr>`:""}
         </tbody></table>
-        ${w.on?`<table class="mini kv"><tbody>
-          <tr><td>Bank-Rate</td><td class="n"><span class="num">${eur(r.annuitaet/12)}/M</span></td></tr>
-          <tr><td>+ BHW-Rate</td><td class="n"><span class="num">−${eur(r.bhwRateM)}/M</span></td></tr>
-          <tr><td><strong>Gesamtrate</strong></td><td class="n"><span class="num"><strong>${eur(r.annuitaet/12+r.bhwRateM)}/M</strong></span></td></tr>
-          <tr><td>CF nach Steuern</td><td class="n"><span class="num ${r.cfSt<0?"val-bad":"val-good"}">${eurM(r.cfSt)}/M</span></td></tr>
-          ${S.profil.ueberschuss>0?`<tr><td>Anteil am Haushaltsüberschuss</td><td class="n"><span class="num">${num((Math.abs(Math.min(0,r.cfSt)))/S.profil.ueberschuss*100,0)} %</span></td></tr>`:""}
-        </tbody></table>`:""}
+        <table class="mini kv"><tbody>
+          <tr><td><strong>Depot-Hürde (${num(g.depotRendite,1)} %)</strong></td><td class="n"><span class="num ${r.depot.huerde<=1?"val-good":r.depot.huerde<=1.6?"val-warn":"val-bad"}"><strong>${pct(r.depot.huerde,2)} p.a.</strong></span></td></tr>
+          <tr><td>Break-even braucht</td><td class="n"><span class="num">${pct(r.depot.breakEven,2)} p.a.</span></td></tr>
+          <tr><td>Schuldenfrei nach</td><td class="n"><span class="num">${pr.laufzeit?pr.laufzeit+" Jahren":"&gt; 45 J"}</span></td></tr>
+        </tbody></table>
       </div>
-      ${w.on?`<p class="note" style="margin-top:8px">Fließt in Cashflow, Verlauf und Depot-Hürde ein: Guthaben
-        ${eur(w.guthaben)} zählt als Eigenkapital, das Bankdarlehen sinkt um ${eur(w.betrag)}.</p>`:
-      `<p class="note" style="margin-top:8px">Ausgegraut = zählt nirgends mit. Die Werte sind die
-        Profil-Vorgaben aus „Meine Lage"; anhaken macht sie für dieses Objekt scharf und editierbar.</p>`}
     </div>
+
     <div class="box" style="grid-column:1/-1"><h4>Eigenkapital-Hebel</h4>
       <div class="splitrow">
-        <div class="hscroll"><table class="mini"><thead><tr><th class="n">EK</th><th class="n">Darlehen</th><th class="n">CF n. St.</th><th class="n">Depot-Hürde</th></tr></thead><tbody>
+        <div class="hscroll"><table class="mini"><thead><tr><th class="n">Bar-EK</th><th class="n">Hauptdarlehen</th><th class="n">CF n. St.</th><th class="n">Depot-Hürde</th></tr></thead><tbody>
         ${[r.knk, r.knk+25000, r.knk+50000, r.knk+100000].map(ek=>{
           const oo={...o,ekAuto:false,ekEinsatz:ek};
           const k=kennzahlen(oo,g), d=depotHuerde(oo,g);
@@ -1366,8 +1389,9 @@ function paneFin(r){
             <td class="n"><span class="num ${d.huerde<=1?"val-good":"val-warn"}">${pct(d.huerde,2)}</span></td></tr>`;
         }).join("")}
         </tbody></table></div>
-        <p class="note" style="margin:0;align-self:center">Mehr Eigenkapital verbessert den Cashflow, aber kaum die Hürde
-        gegen das Depot — bei negativem Hebel schichtet man Kapital in die schlechtere Rendite um.</p>
+        <p class="note" style="margin:0;align-self:center">Variiert nur das Bar-Eigenkapital, mit dem aktuellen
+        Baustein-Mix. Mehr EK verbessert den Cashflow, aber kaum die Hürde gegen das Depot — bei negativem
+        Hebel schichtet man Kapital in die schlechtere Rendite um.</p>
       </div>
     </div>
   </div>`;
@@ -1440,24 +1464,18 @@ function bindDetail(){
       d.querySelectorAll(".tabpane").forEach(p=>p.hidden=(p.dataset.pane!==t.dataset.tab));
       S.ui.tabs=S.ui.tabs||{}; S.ui.tabs[id]=t.dataset.tab; save();
     }));
-    d.querySelectorAll("[data-vfield]").forEach(inp=>inp.addEventListener("change",()=>{
+    d.querySelectorAll("[data-bfield]").forEach(inp=>inp.addEventListener("change",()=>{
       const o=S.objekte.find(x=>x.id===inp.dataset.id); if(!o) return;
-      const v=o.varianten[+inp.dataset.i]; if(!v) return;
-      const f=inp.dataset.vfield;
-      if(f==="name") v.name=inp.value.trim()||"Variante";
-      else if(f==="laufzeit"){
-        const jahre=numDE(inp.value);
-        if(isFinite(jahre)&&jahre>0) v.tilgung=tilgungFuerLaufzeit(o,S.basis,v.zins,v.ek,jahre);
+      const f=inp.dataset.bfield;
+      if(f==="ekcash"){
+        const n=numDE(inp.value);
+        if(isFinite(n)){ o.ekAuto=false; o.ekEinsatz=n; save(); renderTable(); bindDetail(); }
+        return;
       }
-      else { const n=numDE(inp.value); if(isFinite(n)) v[f]=n; }
-      save(); renderTable();
-    }));
-    d.querySelectorAll("[data-bhwfield]").forEach(inp=>inp.addEventListener("change",()=>{
-      const o=S.objekte.find(x=>x.id===inp.dataset.id); if(!o) return;
-      o.bhw=o.bhw||{};
-      const f=inp.dataset.bhwfield;
-      if(f==="on") o.bhw.on=inp.checked;
-      else { const n=numDE(inp.value); if(isFinite(n)) o.bhw[f]=n; }
+      ensureBausteine(o);
+      const b=o.bausteine.find(x=>x.key===inp.dataset.k); if(!b) return;
+      if(f==="name") b.name=inp.value.trim()||"Baustein";
+      else { const n=numDE(inp.value); if(isFinite(n)) b[f]=n; }
       save(); renderTable(); bindDetail();
     }));
     d.addEventListener("click",e=>{
@@ -1491,22 +1509,21 @@ function bindDetail(){
         if(!n||!isFinite(v)) return;
         o.massnahmen.push({n,v,b:isFinite(bb)?bb:v}); save(); renderTable(); return;
       }
-      if(act==="addvar"){
+      if(act==="badd"){
+        ensureBausteine(o);
         const box=b.closest(".addrow");
-        const name=box.querySelector('[data-v="name"]').value.trim()||"Variante";
-        const zins=numDE(box.querySelector('[data-v="zins"]').value);
-        const tilg=numDE(box.querySelector('[data-v="tilgung"]').value);
-        const ek=numDE(box.querySelector('[data-v="ek"]').value);
-        if(!isFinite(zins)||!isFinite(tilg)) { toast("Zins und Tilgung angeben"); return; }
-        o.varianten=o.varianten||[];
-        o.varianten.push({name,zins,tilgung:tilg,ek:isFinite(ek)?ek:basis(o,S.basis).knk});
-        save(); renderTable(); return;
+        const name=box.querySelector('[data-bnew="name"]').value.trim()||"Baustein";
+        const zi=numDE(box.querySelector('[data-bnew="zins"]').value);
+        const ti=numDE(box.querySelector('[data-bnew="tilgung"]').value);
+        o.bausteine.push({key:uid(),name,on:false,haupt:false,betrag:null,
+          zins:isFinite(zi)?zi:+S.basis.zins, tilgung:isFinite(ti)?ti:+S.basis.tilgung, rate:null, laufzeit:null});
+        save(); renderTable(); bindDetail(); return;
       }
-      if(act==="delvar"){ o.varianten.splice(+b.dataset.i,1); save(); renderTable(); return; }
-      if(act==="varfrombasis"){
-        o.varianten=o.varianten||[];
-        o.varianten.push({name:"Rechenbasis (angepasst)", zins:+S.basis.zins, tilgung:+S.basis.tilgung, ek:basis(o,S.basis).knk});
-        save(); renderTable(); return;
+      if(act==="bdel"){
+        ensureBausteine(o);
+        o.bausteine=o.bausteine.filter(x=>x.key!==b.dataset.k);
+        if(!o.bausteine.some(x=>x.haupt&&x.on)){ const p=o.bausteine.find(x=>x.on)||o.bausteine[0]; if(p) p.haupt=true; }
+        save(); renderTable(); bindDetail(); return;
       }
       if(act==="print"){
         S.ui.printOnly=o.id;
@@ -1521,9 +1538,21 @@ function bindDetail(){
       }
     });
     d.addEventListener("change",e=>{
-      const b=e.target.closest('[data-act="chk"]'); if(!b) return;
+      const b=e.target.closest('[data-act]'); if(!b) return;
+      const act=b.dataset.act;
       const o=S.objekte.find(x=>x.id===b.dataset.id); if(!o) return;
-      o.fragen[+b.dataset.i].d=b.checked; save(); renderTable();
+      if(act==="chk"){ o.fragen[+b.dataset.i].d=b.checked; save(); renderTable(); return; }
+      if(act==="btoggle"){
+        ensureBausteine(o);
+        const x=o.bausteine.find(y=>y.key===b.dataset.k); if(x) x.on=b.checked;
+        if(!o.bausteine.some(y=>y.haupt&&y.on)){ const p=o.bausteine.find(y=>y.on)||o.bausteine[0]; if(p) p.haupt=true; }
+        save(); renderTable(); bindDetail(); return;
+      }
+      if(act==="bhaupt"){
+        ensureBausteine(o);
+        o.bausteine.forEach(y=>y.haupt=(y.key===b.dataset.k));
+        save(); renderTable(); bindDetail(); return;
+      }
     });
     d.querySelectorAll('[data-field="notiz"]').forEach(t=>{
       t.addEventListener("change",()=>{
