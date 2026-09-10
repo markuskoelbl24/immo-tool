@@ -248,9 +248,19 @@ legend{font-size:.68rem;letter-spacing:.08em;text-transform:uppercase;color:var(
 .foot{font-size:.75rem;color:var(--ink-3);padding:22px 0 0;line-height:1.6;border-top:1px solid var(--rule);margin-top:26px}
 @media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
 .print-h{display:none}
+.print-cols{display:none}
 @media print{
   .basis,.mast-actions,.filters,button,.panel,.addrow,.tblhd{display:none!important}
   body{background:#fff}
+  /* Echte Kopfzeile weg -- sie wiederholt sich sonst auf jeder Seite und steht
+     über dem Objektnamen. Stattdessen eine Spaltenbeschriftung pro Objekt,
+     direkt zwischen Name und Werten (siehe .print-cols in renderTable). */
+  #thead{display:none!important}
+  .print-cols{display:table-row!important}
+  .print-cols td{font-size:.66rem;letter-spacing:.06em;text-transform:uppercase;
+    color:var(--ink-3);font-weight:700;border-top:none;border-bottom:1px solid var(--ink);
+    padding:2px 10px 3px;white-space:nowrap}
+  .objtitle-tr td,.print-cols td{break-after:avoid}
   /* thead th ist fuers Scrollen am Bildschirm sticky -- beim Drucken bricht das
      nachweislich (Chrome-Bug-Klasse, wie das Grid-Fragmentieren weiter unten):
      eine sticky-Kopfzeile "verrutscht" ueber Seiten hinweg an eine falsche Stelle
@@ -262,8 +272,9 @@ legend{font-size:.68rem;letter-spacing:.08em;text-transform:uppercase;color:var(
      untereinander, als reine Bloecke im display:block-Elternteil aber nicht von allein:
      erst display:block auf den Spans selbst erzwingt den Zeilenumbruch (per PDF-Test
      gefunden -- ohne das liefen Name und Lage in einer Zeile zusammen). */
-  .objrow{display:block}
-  .objrow .objname,.objrow .objmeta{display:block}
+  .objrow{display:block!important}
+  .objrow .objname{display:block!important}
+  .objrow .objmeta{display:block!important;text-align:right;margin-top:1px}
   /* .tblwrap hat overflow-x:auto (fuer die 16-Objekte-Ansicht am Bildschirm) --
      im Druck kann niemand scrollen, "versteckte" Spalten fielen dadurch komplett
      weg (Status, Depot-Huerde). Tabelle bekommt volle Breite, nichts mehr geclippt. */
@@ -1072,6 +1083,7 @@ function renderTable(){
     return `<tr class="objtitle-tr ${offen?"open":""}" data-id="${r.o.id}"><td class="objtitle-cell" colspan="${COLS.length}">
         <div class="objrow"><span class="objname">${esc(r.o.name)}</span><span class="objmeta">${esc(r.o.lage||r.o.strasse||"")}</span></div>
       </td></tr>
+      <tr class="print-cols">${COLS.map(c=>`<td class="${c.n?"n":""}">${c.l}</td>`).join("")}</tr>
       <tr data-id="${r.o.id}" class="${offen?"open":""}">${cells}</tr>
       <tr class="detail ${offen?"":"hidden"}" data-det="${r.o.id}"><td colspan="${COLS.length}">
       ${offen?detailHTML(r):""}</td></tr>`;
@@ -1320,7 +1332,16 @@ function paneFin(r){
   const hauptFehlt=!bl.some(b=>b.on&&b.haupt);
   const rateGes=r.annuitaet/12+r.zusatzRateM;
   const rM=x=>x.haupt?r.annuitaet/12:bausteinRateM(x);
-  const zeile=x=>`<tr class="${x.on?"":"baustein-off"}">
+  const planFor=x=>{
+    if(!x.on) return [];
+    if(x.haupt) return pr.plan;
+    const betr=+x.betrag||0; if(betr<=0) return [];
+    const tp = x.rate>0 ? Math.max(0.05,(+x.rate)*12/betr*100-(+x.zins||0)) : (+x.tilgung||0);
+    return amortisation(betr,+x.zins||0,tp,0,null,45);
+  };
+  const zeile=x=>{
+    const pl=planFor(x), rest10=(pl[9]||{}).rest, zinsGes=pl.reduce((s,p)=>s+p.zins,0);
+    return `<tr class="${x.on?"":"baustein-off"}">
     <td class="n"><input type="radio" name="bhaupt-${o.id}" ${x.haupt?"checked":""} data-act="bhaupt" data-id="${o.id}" data-k="${x.key}" title="Hauptdarlehen — Betrag = Restsumme"></td>
     <td class="n"><input type="checkbox" ${x.on?"checked":""} data-act="btoggle" data-id="${o.id}" data-k="${x.key}"></td>
     <td><input value="${esc(x.name)}" data-bfield="name" data-id="${o.id}" data-k="${x.key}" style="width:100%;min-width:96px"></td>
@@ -1333,15 +1354,18 @@ function paneFin(r){
       : `<input type="text" inputmode="decimal" value="${num(x.tilgung!=null?+x.tilgung:r.hTilg,1)}" data-bfield="tilgung" data-id="${o.id}" data-k="${x.key}" style="width:42px;text-align:right"> %`}</td>
     <td class="n">${x.laufzeit?num(+x.laufzeit,0)+" J":(x.haupt?(pr.laufzeit?pr.laufzeit+" J":"&gt;45"):"–")}</td>
     <td class="n"><span class="num">${x.on?eur(rM(x)):"–"}</span></td>
+    <td class="n"><span class="num">${x.on&&pl.length?eur(rest10):"–"}</span></td>
+    <td class="n"><span class="num">${x.on&&pl.length?eur(zinsGes):"–"}</span></td>
     <td class="n">${(x.key==="bhw"||x.haupt)?"":`<button class="tiny ghost" data-act="bdel" data-id="${o.id}" data-k="${x.key}">✕</button>`}</td>
-  </tr>`;
+  </tr>`;};
   return `<div class="detgrid">
     <div class="box" style="grid-column:1/-1"><h4>Finanzierungsbausteine</h4>
       <p class="note" style="margin:0 0 8px">Rechenbasis: ${num(g.zins,2)} % Zins · ${num(g.tilgung,1)} % Tilgung ·
         ${num(g.zinsbindung,0)} J Bindung / ${num(g.anschlusszins,2)} % Anschluss — Vorlage für neue Zeilen, kein Baustein.</p>
       <div class="hscroll"><table class="mini"><thead><tr>
         <th class="n" title="Hauptdarlehen (Betrag = Restsumme)">Rest</th><th class="n">aktiv</th><th>Name</th>
-        <th class="n">Betrag</th><th class="n">Zins</th><th class="n">Tilg./Rate</th><th class="n">Laufzeit</th><th class="n">Rate/M</th><th></th>
+        <th class="n">Betrag</th><th class="n">Zins</th><th class="n">Tilg./Rate</th><th class="n">Laufzeit</th><th class="n">Rate/M</th>
+        <th class="n" title="Restschuld nach 10 Jahren">Rest J10</th><th class="n" title="Zinsen gesamt bis zur Volltilgung">Zins gesamt</th><th></th>
       </tr></thead><tbody>${bl.map(zeile).join("")}</tbody></table></div>
       <div class="addrow" style="flex-wrap:wrap;max-width:560px">
         <input placeholder="Name, z. B. Bank B / 15 J" data-bnew="name" style="min-width:150px">
@@ -1455,6 +1479,15 @@ function paneBew(r){
   </div>`;
 }
 
+/* Neu zeichnen, ohne dass die Seite springt -- renderTable() baut #tbody komplett
+   neu, dabei geht die Scrollposition verloren. Für die Baustein-Interaktionen
+   (Häkchen/Radio/Feld) merken wir sie und stellen sie danach wieder her. */
+function rerenderKeepScroll(){
+  const y=window.scrollY;
+  renderTable(); bindDetail();
+  window.scrollTo(0,y);
+}
+
 /* ================= Detail-Events ================= */
 function bindDetail(){
   document.querySelectorAll("[data-detail]").forEach(d=>{
@@ -1469,14 +1502,14 @@ function bindDetail(){
       const f=inp.dataset.bfield;
       if(f==="ekcash"){
         const n=numDE(inp.value);
-        if(isFinite(n)){ o.ekAuto=false; o.ekEinsatz=n; save(); renderTable(); bindDetail(); }
+        if(isFinite(n)){ o.ekAuto=false; o.ekEinsatz=n; save(); rerenderKeepScroll(); }
         return;
       }
       ensureBausteine(o);
       const b=o.bausteine.find(x=>x.key===inp.dataset.k); if(!b) return;
       if(f==="name") b.name=inp.value.trim()||"Baustein";
       else { const n=numDE(inp.value); if(isFinite(n)) b[f]=n; }
-      save(); renderTable(); bindDetail();
+      save(); rerenderKeepScroll();
     }));
     d.addEventListener("click",e=>{
       const b=e.target.closest("[data-act]"); if(!b) return;
@@ -1517,13 +1550,13 @@ function bindDetail(){
         const ti=numDE(box.querySelector('[data-bnew="tilgung"]').value);
         o.bausteine.push({key:uid(),name,on:false,haupt:false,betrag:null,
           zins:isFinite(zi)?zi:+S.basis.zins, tilgung:isFinite(ti)?ti:+S.basis.tilgung, rate:null, laufzeit:null});
-        save(); renderTable(); bindDetail(); return;
+        save(); rerenderKeepScroll(); return;
       }
       if(act==="bdel"){
         ensureBausteine(o);
         o.bausteine=o.bausteine.filter(x=>x.key!==b.dataset.k);
         if(!o.bausteine.some(x=>x.haupt&&x.on)){ const p=o.bausteine.find(x=>x.on)||o.bausteine[0]; if(p) p.haupt=true; }
-        save(); renderTable(); bindDetail(); return;
+        save(); rerenderKeepScroll(); return;
       }
       if(act==="print"){
         S.ui.printOnly=o.id;
@@ -1546,12 +1579,12 @@ function bindDetail(){
         ensureBausteine(o);
         const x=o.bausteine.find(y=>y.key===b.dataset.k); if(x) x.on=b.checked;
         if(!o.bausteine.some(y=>y.haupt&&y.on)){ const p=o.bausteine.find(y=>y.on)||o.bausteine[0]; if(p) p.haupt=true; }
-        save(); renderTable(); bindDetail(); return;
+        save(); rerenderKeepScroll(); return;
       }
       if(act==="bhaupt"){
         ensureBausteine(o);
         o.bausteine.forEach(y=>y.haupt=(y.key===b.dataset.k));
-        save(); renderTable(); bindDetail(); return;
+        save(); rerenderKeepScroll(); return;
       }
     });
     d.querySelectorAll('[data-field="notiz"]').forEach(t=>{
