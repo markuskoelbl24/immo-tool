@@ -182,12 +182,23 @@ tr.detail.hidden{display:none}
 .tab:hover{background:transparent;color:var(--ink);border-color:transparent;border-bottom-color:var(--rule-2)}
 .tab[aria-selected="true"]:hover{border-bottom-color:var(--accent)}
 .tabpane[hidden]{display:none}
-.detgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:16px;align-items:start}
-.box{background:var(--card);border:1px solid var(--rule);border-radius:7px;padding:12px}
+/* Kasten-Raster: erst ab ~340px echter Platz fuer Label + Wert nebeneinander --
+   darunter lieber einspaltig als zwei gequetschte Spalten mit umbrechenden Labels. */
+.detgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:16px;align-items:start}
+/* Bewertung: dafür|dagegen als breites Paar, darunter Checkliste (breit) neben
+   Sanierungsrisiko (schmaler), Notiz volle Breite. Flex statt Raster wegen der
+   ungleichen Spalten in Reihe 2. */
+.bewgrid{display:flex;flex-wrap:wrap;gap:16px;align-items:flex-start}
+.bewgrid>.box{flex:1 1 380px;min-width:0}
+.bewgrid>.box.wide{flex:2 1 460px}
+.bewgrid>.box.narrow{flex:1 1 280px}
+.bewgrid>.box.full{flex:1 1 100%}
+.box{background:var(--card);border:1px solid var(--rule);border-radius:7px;padding:12px;min-width:0}
 .box h4{margin:0 0 8px;font-family:var(--sans);font-size:.7rem;letter-spacing:.08em;
   text-transform:uppercase;color:var(--ink-3);font-weight:700}
 .mini{width:100%;min-width:0;font-size:.8rem}
 .mini th,.mini td{padding:4px 6px}
+.mini td.n{white-space:nowrap}   /* Werte nicht umbrechen; Kopfzeilen dürfen */
 .mini thead th{position:static;background:transparent;border-bottom:1px solid var(--rule-2)}
 .hscroll{overflow-x:auto;scrollbar-width:none}
 .hscroll::-webkit-scrollbar{display:none}
@@ -195,14 +206,15 @@ tr.detail.hidden{display:none}
 .note.warnbox{background:var(--warn-bg);color:var(--warn);border-radius:6px;padding:9px 11px;font-weight:500}
 .note.badbox{background:var(--bad-bg);color:var(--bad);border-radius:6px;padding:9px 11px;font-weight:500}
 .note.goodbox{background:var(--good-bg);color:var(--good);border-radius:6px;padding:9px 11px;font-weight:500}
-ul.bullets{margin:0;padding-left:17px;font-size:.81rem;line-height:1.55}
-ul.bullets li{margin-bottom:4px}
-ul.checks{list-style:none;margin:0;padding:0;font-size:.81rem}
-ul.checks li{display:flex;gap:7px;align-items:flex-start;padding:4px 0;border-bottom:1px dotted var(--rule)}
-ul.checks li:last-child{border-bottom:0}
-ul.checks input[type=checkbox]{width:auto;margin-top:3px;accent-color:var(--accent);flex:none}
-ul.checks li.done span{text-decoration:line-through;color:var(--ink-3)}
-ul.checks .txt{flex:1}
+/* Aufzähl- und Checklisten teilen sich das Layout: Zeile = flex, Text nimmt den Platz,
+   das ✕ steht rechtsbündig in einer Spalte (galt vorher nur für ul.checks). */
+ul.bullets,ul.checks{list-style:none;margin:0;padding:0;font-size:.81rem;line-height:1.5}
+ul.bullets li,ul.checks li{display:flex;gap:8px;align-items:flex-start;padding:4px 0;border-bottom:1px dotted var(--rule)}
+ul.bullets li:last-child,ul.checks li:last-child{border-bottom:0}
+ul.bullets .txt,ul.checks .txt{flex:1;min-width:0}
+ul.bullets li>button,ul.checks li>button{flex:none;margin-top:1px}
+ul.checks input[type=checkbox]{width:auto;margin-top:2px;accent-color:var(--accent);flex:none}
+ul.checks li.done .txt{text-decoration:line-through;color:var(--ink-3)}
 .addrow{display:flex;gap:6px;margin-top:8px}
 .addrow input{flex:1}
 /* 2. Darlehen (BHW): ausgegraut, bis das Haekchen es scharf schaltet.
@@ -213,9 +225,14 @@ ul.checks .txt{flex:1}
 .bhw-toggle input{width:auto;vertical-align:-2px;margin-right:7px;accent-color:var(--accent)}
 .bhw-off{opacity:.5}
 .bhw-off .bhw-toggle{opacity:1;color:var(--ink-2)}
-.bhw-inp input:disabled{background:transparent;border-color:var(--rule-2);color:var(--ink-3);cursor:not-allowed}
-.bhw-cols{display:flex;flex-wrap:wrap;gap:10px 26px}
-.bhw-cols>table{flex:1 1 240px;min-width:0}
+.bhw-off input:disabled{background:transparent;border-color:var(--rule-2);color:var(--ink-3);cursor:not-allowed}
+/* zwei Blöcke nebeneinander in einem Kasten (BHW-Eingaben+Wirkung, Hebel-Tabelle+Text),
+   bricht auf schmalen Screens untereinander */
+.splitrow{display:flex;flex-wrap:wrap;gap:12px 34px;align-items:flex-start}
+.splitrow>.hscroll,.splitrow>table{flex:0 1 auto}
+.splitrow>.note{flex:1 1 240px;min-width:0}
+.mini.kv{width:auto}
+.mini.kv td:first-child{padding-right:24px}
 
 /* modal */
 dialog{border:1px solid var(--rule);border-radius:10px;background:var(--card);color:var(--ink);
@@ -285,8 +302,10 @@ legend{font-size:.68rem;letter-spacing:.08em;text-transform:uppercase;color:var(
      Kaesten je Reihe, volle Spaltenbreite statt schmal und mit Luecke. Kaesten mit
      grid-column:1/-1 (Darlehensvergleich, Verlauf) bekommen ueber flex-basis:100%
      weiterhin die volle Zeile fuer sich. */
-  .detgrid{display:flex!important;flex-wrap:wrap!important;gap:14px!important}
-  .detgrid>.box{flex:1 1 calc(50% - 7px);min-width:0;margin-bottom:0;break-inside:avoid-page}
+  .detgrid,.bewgrid{display:flex!important;flex-wrap:wrap!important;gap:14px!important}
+  .detgrid>.box,.bewgrid>.box{flex:1 1 calc(50% - 7px);min-width:0;margin-bottom:0;break-inside:avoid-page}
+  /* Bewertung im Druck: Checkliste (lang) und Notiz volle Breite, Rest 2 je Reihe. */
+  .bewgrid>.box.wide,.bewgrid>.box.full{flex-basis:100%!important;break-inside:auto}
   /* Volle-Breite-Kaesten (Verlauf, Darlehensvergleich) duerfen laenger als eine Seite
      werden (Verlauf mit ausgeklapptem vollen Tilgungsplan z.B. 40+ Zeilen) -- mit
      break-inside:avoid-page von oben wuerde Chrome den ganzen Kasten auf eine neue,
@@ -1307,25 +1326,11 @@ function paneFin(r){
       ${w.on?`<br>„EK“ ist das Bar-Eigenkapital; das BHW-Guthaben (${eur(w.guthaben)}) und das BHW-Darlehen
       (${eur(w.betrag)}) senken die „Darlehen“-Spalte zusätzlich, CF und Rate enthalten die BHW-Rate.`:""}</p>
     </div>
-    <div class="box"><h4>Eigenkapital-Hebel</h4>
-      <div class="hscroll"><table class="mini"><thead><tr><th class="n">EK</th><th class="n">Darlehen</th><th class="n">CF n. St.</th><th class="n">Depot-Hürde</th></tr></thead><tbody>
-      ${[r.knk, r.knk+25000, r.knk+50000, r.knk+100000].map(ek=>{
-        const oo={...o,ekAuto:false,ekEinsatz:ek};
-        const k=kennzahlen(oo,g), d=depotHuerde(oo,g);
-        return `<tr><td class="n"><span class="num">${eur(ek)}</span></td>
-          <td class="n"><span class="num">${eur(k.darlehen)}</span></td>
-          <td class="n"><span class="num ${k.cfSt<0?"val-bad":"val-good"}">${eurM(k.cfSt)}</span></td>
-          <td class="n"><span class="num ${d.huerde<=1?"val-good":"val-warn"}">${pct(d.huerde,2)}</span></td></tr>`;
-      }).join("")}
-      </tbody></table></div>
-      <p class="note" style="margin-top:8px">Mehr Eigenkapital verbessert den Cashflow, aber kaum die Hürde
-      gegen das Depot — bei negativem Hebel schichtet man Kapital in die schlechtere Rendite um.</p>
-    </div>
     <div class="box${w.on?"":" bhw-off"}" style="grid-column:1/-1"><h4>2. Darlehen (BHW)</h4>
       <label class="bhw-toggle"><input type="checkbox" data-bhwfield="on" data-id="${o.id}" ${w.on?"checked":""}>
         in die Rechnung einbeziehen</label>
-      <div class="bhw-cols">
-        <table class="mini bhw-inp"><tbody>
+      <div class="splitrow">
+        <table class="mini kv"><tbody>
           <tr><td>Betrag</td><td class="n"><input type="text" inputmode="decimal" value="${num(w.betrag,0)}"
             data-bhwfield="betrag" data-id="${o.id}" ${w.on?"":"disabled"} style="width:88px;text-align:right"> €</td></tr>
           <tr><td>Zins</td><td class="n"><input type="text" inputmode="decimal" value="${num(w.zins,2)}"
@@ -1336,7 +1341,7 @@ function paneFin(r){
             data-bhwfield="laufzeit" data-id="${o.id}" ${w.on?"":"disabled"} style="width:40px;text-align:right"> J</td></tr>
           <tr><td>Bausparguthaben → EK</td><td class="n"><span class="num">${eur(w.guthaben)}</span></td></tr>
         </tbody></table>
-        ${w.on?`<table class="mini"><tbody>
+        ${w.on?`<table class="mini kv"><tbody>
           <tr><td>Bank-Rate</td><td class="n"><span class="num">${eur(r.annuitaet/12)}/M</span></td></tr>
           <tr><td>+ BHW-Rate</td><td class="n"><span class="num">−${eur(r.bhwRateM)}/M</span></td></tr>
           <tr><td><strong>Gesamtrate</strong></td><td class="n"><span class="num"><strong>${eur(r.annuitaet/12+r.bhwRateM)}/M</strong></span></td></tr>
@@ -1349,6 +1354,22 @@ function paneFin(r){
       `<p class="note" style="margin-top:8px">Ausgegraut = zählt nirgends mit. Die Werte sind die
         Profil-Vorgaben aus „Meine Lage"; anhaken macht sie für dieses Objekt scharf und editierbar.</p>`}
     </div>
+    <div class="box" style="grid-column:1/-1"><h4>Eigenkapital-Hebel</h4>
+      <div class="splitrow">
+        <div class="hscroll"><table class="mini"><thead><tr><th class="n">EK</th><th class="n">Darlehen</th><th class="n">CF n. St.</th><th class="n">Depot-Hürde</th></tr></thead><tbody>
+        ${[r.knk, r.knk+25000, r.knk+50000, r.knk+100000].map(ek=>{
+          const oo={...o,ekAuto:false,ekEinsatz:ek};
+          const k=kennzahlen(oo,g), d=depotHuerde(oo,g);
+          return `<tr><td class="n"><span class="num">${eur(ek)}</span></td>
+            <td class="n"><span class="num">${eur(k.darlehen)}</span></td>
+            <td class="n"><span class="num ${k.cfSt<0?"val-bad":"val-good"}">${eurM(k.cfSt)}</span></td>
+            <td class="n"><span class="num ${d.huerde<=1?"val-good":"val-warn"}">${pct(d.huerde,2)}</span></td></tr>`;
+        }).join("")}
+        </tbody></table></div>
+        <p class="note" style="margin:0;align-self:center">Mehr Eigenkapital verbessert den Cashflow, aber kaum die Hürde
+        gegen das Depot — bei negativem Hebel schichtet man Kapital in die schlechtere Rendite um.</p>
+      </div>
+    </div>
   </div>`;
 }
 
@@ -1360,20 +1381,20 @@ function paneBew(r){
   const anteilV=mea?sumV*mea/100:null, anteilB=mea?sumB*mea/100:null;
   const deckung=(o.ruecklageWEG&&mea)?o.ruecklageWEG*mea/100:null;
   const offen=(o.fragen||[]).filter(f=>!f.d).length;
-  return `<div class="detgrid">
+  return `<div class="bewgrid">
     <div class="box"><h4>Spricht dafür</h4>
       <ul class="bullets">${(o.staerken||[]).map((s,i)=>
-        `<li>${esc(s)} <button class="tiny ghost" data-act="rm" data-list="staerken" data-id="${o.id}" data-i="${i}" title="entfernen">✕</button></li>`).join("")||"<li>–</li>"}</ul>
+        `<li><span class="txt">${esc(s)}</span><button class="tiny ghost" data-act="rm" data-list="staerken" data-id="${o.id}" data-i="${i}" title="entfernen">✕</button></li>`).join("")||"<li><span class='txt'>–</span></li>"}</ul>
       <div class="addrow"><input placeholder="Stärke ergänzen" data-add="staerken" data-id="${o.id}">
         <button class="tiny" data-act="add" data-list="staerken" data-id="${o.id}">+</button></div>
     </div>
     <div class="box"><h4>Spricht dagegen</h4>
       <ul class="bullets">${(o.schwaechen||[]).map((s,i)=>
-        `<li>${esc(s)} <button class="tiny ghost" data-act="rm" data-list="schwaechen" data-id="${o.id}" data-i="${i}" title="entfernen">✕</button></li>`).join("")||"<li>–</li>"}</ul>
+        `<li><span class="txt">${esc(s)}</span><button class="tiny ghost" data-act="rm" data-list="schwaechen" data-id="${o.id}" data-i="${i}" title="entfernen">✕</button></li>`).join("")||"<li><span class='txt'>–</span></li>"}</ul>
       <div class="addrow"><input placeholder="Schwäche ergänzen" data-add="schwaechen" data-id="${o.id}">
         <button class="tiny" data-act="add" data-list="schwaechen" data-id="${o.id}">+</button></div>
     </div>
-    <div class="box"><h4>Vor der Besichtigung klären <span class="pill ${offen?"warn":"good"}">${offen} offen</span></h4>
+    <div class="box wide"><h4>Vor der Besichtigung klären <span class="pill ${offen?"warn":"good"}">${offen} offen</span></h4>
       <ul class="checks">${(o.fragen||[]).map((f,i)=>
         `<li class="${f.d?"done":""}"><input type="checkbox" ${f.d?"checked":""} data-act="chk" data-id="${o.id}" data-i="${i}">
           <span class="txt">${esc(f.t)}</span>
@@ -1381,7 +1402,7 @@ function paneBew(r){
       <div class="addrow"><input placeholder="Frage ergänzen" data-add="fragen" data-id="${o.id}">
         <button class="tiny" data-act="add" data-list="fragen" data-id="${o.id}">+</button></div>
     </div>
-    <div class="box"><h4>Sanierungsrisiko der WEG</h4>
+    <div class="box narrow"><h4>Sanierungsrisiko der WEG</h4>
       ${mea?"":'<p class="note warnbox">Anzahl der Einheiten fehlt — ohne sie ist der Anteil nicht berechenbar. Unter „Daten ändern“ eintragen.</p>'}
       <table class="mini"><thead><tr><th>Maßnahme</th><th class="n">gesamt</th><th class="n">dein Anteil</th><th></th></tr></thead><tbody>
       ${(o.massnahmen||[]).map((m,i)=>`<tr><td>${esc(m.n)}</td>
@@ -1404,7 +1425,7 @@ function paneBew(r){
         ${anteilV&&deckung<anteilV?`<span class="val-bad">Lücke mindestens ${eur(anteilV-deckung)}.</span>`:'<span class="val-good">Rücklage trägt die untere Schätzung.</span>'}`:
         "Rücklagenstand der WEG noch unbekannt."}</p>`:""}
     </div>
-    <div class="box" style="grid-column:1/-1"><h4>Notiz</h4>
+    <div class="box full"><h4>Notiz</h4>
       <textarea rows="3" data-field="notiz" data-id="${o.id}" placeholder="Eigene Einschätzung, Gesprächsnotizen, Termine …">${esc(o.notiz)}</textarea>
     </div>
   </div>`;
