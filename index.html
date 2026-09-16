@@ -1469,7 +1469,7 @@ function paneBew(r){
         <input type="text" inputmode="decimal" placeholder="bis €" data-m="b" style="max-width:100px">
         <button class="tiny" data-act="addmass" data-id="${o.id}">+</button>
       </div>
-      ${mea?`<p class="note" style="margin-top:8px">Miteigentumsanteil ${num(mea,1)} %${o.einheiten?` (geschätzt aus ${o.einheiten} Einheiten)`:""}.
+      ${mea?`<p class="note" style="margin-top:8px">Miteigentumsanteil ${num(mea,o.mea?2:1)} %${!o.mea&&o.einheiten?` (geschätzt aus ${o.einheiten} Einheiten)`:""}.
         ${deckung!=null?`WEG-Rücklage deckt davon <strong>${eur(deckung)}</strong>.
         ${anteilV&&deckung<anteilV?`<span class="val-bad">Lücke mindestens ${eur(anteilV-deckung)}.</span>`:'<span class="val-good">Rücklage trägt die untere Schätzung.</span>'}`:
         "Rücklagenstand der WEG noch unbekannt."}</p>`:""}
