@@ -61,7 +61,7 @@ a{color:var(--accent)}
 
 /* masthead */
 header.mast{border-bottom:1px solid var(--rule);background:var(--card)}
-.mast-in{display:flex;align-items:center;gap:16px;flex-wrap:wrap;padding:14px 0}
+.mast-in{display:flex;align-items:center;gap:16px;flex-wrap:wrap;padding-top:14px;padding-bottom:14px}
 .mast-title{display:flex;flex-direction:column;gap:1px;margin-right:auto}
 .mast-title .sub{font-size:.78rem;color:var(--ink-3)}
 .mast-actions{display:flex;gap:8px;flex-wrap:wrap}
@@ -93,7 +93,7 @@ label.fld > span{letter-spacing:.02em}
 /* Rechenbasis strip */
 .basis{position:sticky;top:0;z-index:40;background:var(--card);
   border-bottom:1px solid var(--rule);box-shadow:var(--shadow)}
-.basis-in{display:flex;align-items:flex-end;gap:14px;flex-wrap:wrap;padding:10px 0}
+.basis-in{display:flex;align-items:flex-end;gap:14px;flex-wrap:wrap;padding-top:10px;padding-bottom:10px}
 .knob{display:flex;flex-direction:column;gap:2px;min-width:88px}
 .knob label{font-size:.66rem;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-3);font-weight:600}
 .knob .row{display:flex;align-items:center;gap:4px}
@@ -118,11 +118,11 @@ main{padding:20px 0 60px}
 .grid4{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:9px}
 
 /* stat rows */
-.stat{display:flex;justify-content:space-between;align-items:baseline;gap:10px;
+.stat{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:baseline;gap:10px;
   padding:5px 0;border-bottom:1px dotted var(--rule)}
 .stat:last-child{border-bottom:0}
 .stat .k{font-size:.78rem;color:var(--ink-2)}
-.stat .v{font-family:var(--mono);font-variant-numeric:tabular-nums;font-size:.86rem;font-weight:600;text-align:right}
+.stat .v{font-family:var(--mono);font-variant-numeric:tabular-nums;font-size:.86rem;font-weight:600;text-align:right;white-space:nowrap;margin-left:auto}
 
 /* meter */
 .meter{height:6px;border-radius:3px;background:var(--rule);overflow:hidden;margin-top:5px}
@@ -976,7 +976,7 @@ function renderProfil(){
       'sie steuern Stresstest und Nebenkosten-Deckung.</p>':""}
     <div class="stat"><span class="k">Liquides EK</span><span class="v">${eur(p.liquidesEK)}</span></div>
     ${p.bhwGuthaben?`<div class="stat"><span class="k">+ BHW-Guthaben</span><span class="v">${eur(p.bhwGuthaben)}</span></div>`:""}
-    ${p.bhwDarlehen?`<div class="stat"><span class="k">+ BHW-Darlehen möglich (${num(p.bhwZins,2)} %)</span><span class="v">${eur(p.bhwDarlehen)}</span></div>`:""}
+    ${p.bhwDarlehen?`<div class="stat"><span class="k" style="flex-basis:100%">+ BHW-Darlehen möglich (${num(p.bhwZins,2)} %)</span><span class="v">${eur(p.bhwDarlehen)}</span></div>`:""}
     <div class="stat"><span class="k">= verfügbar ohne Depot</span><span class="v">${eur(gesamtEK)}</span></div>
     <div class="stat"><span class="k">Depot (Reserve)</span><span class="v">${eur(p.depot)}</span></div>
     <div class="stat"><span class="k">Haushaltsüberschuss</span><span class="v">${eur(p.ueberschuss)}/M</span></div>
