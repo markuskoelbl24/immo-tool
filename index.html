@@ -103,8 +103,11 @@ label.fld > span{letter-spacing:.02em}
 
 /* layout */
 main{padding:20px 0 60px}
-.cols{display:grid;grid-template-columns:1fr;gap:18px}
-@media(min-width:1120px){.cols{grid-template-columns:300px 1fr;align-items:start}}
+.cols{display:grid;grid-template-columns:minmax(0,1fr);gap:18px}
+/* minmax(0,1fr) statt 1fr: sonst kann die Inhaltsspalte nicht unter die
+   min-width der Tabelle (940px) schrumpfen und die ganze Seite bekommt eine
+   waagrechte Scrollleiste, statt dass die Tabelle in .tblwrap scrollt. */
+@media(min-width:1120px){.cols{grid-template-columns:300px minmax(0,1fr);align-items:start}}
 .panel{background:var(--card);border:1px solid var(--rule);border-radius:8px;box-shadow:var(--shadow)}
 .panel-hd{display:flex;align-items:center;gap:8px;padding:11px 14px;border-bottom:1px solid var(--rule)}
 .panel-hd h2,.panel-hd h3{margin-right:auto}
@@ -122,7 +125,14 @@ main{padding:20px 0 60px}
   padding:5px 0;border-bottom:1px dotted var(--rule)}
 .stat:last-child{border-bottom:0}
 .stat .k{font-size:.78rem;color:var(--ink-2)}
-.stat .v{font-family:var(--mono);font-variant-numeric:tabular-nums;font-size:.86rem;font-weight:600;text-align:right;white-space:nowrap;margin-left:auto}
+.stat .v{font-family:var(--mono);font-variant-numeric:tabular-nums;font-size:.86rem;font-weight:600;text-align:right;white-space:nowrap;margin-left:auto;min-width:0}
+/* Fliesstext-Werte (Lage, Notizen): eigene Zeile, linksbuendig, umbrechend —
+   sonst schiebt eine lange Lage-Beschreibung ueber den Kartenrand hinaus. */
+.stat .v.txt{font-family:var(--sans);font-weight:500;white-space:normal;overflow-wrap:anywhere;
+  text-align:left;flex-basis:100%;margin-left:0;line-height:1.45;color:var(--ink)}
+/* Aufschluesselung unter einem Zahlenwert (z.B. EK = bar + BHW-Guthaben) */
+.stat .sub{flex-basis:100%;text-align:right;font-family:var(--mono);font-variant-numeric:tabular-nums;
+  font-size:.72rem;color:var(--ink-2);white-space:normal;overflow-wrap:anywhere;margin-top:2px}
 
 /* meter */
 .meter{height:6px;border-radius:3px;background:var(--rule);overflow:hidden;margin-top:5px}
@@ -1122,13 +1132,17 @@ function detailHTML(r){
 function paneEck(r){
   const o=r.o;
   const row=(k,v)=>`<div class="stat"><span class="k">${k}</span><span class="v">${v}</span></div>`;
+  // Fliesstext statt Zahl: bricht um und laeuft nicht aus der Karte heraus
+  const rowTxt=(k,v)=>`<div class="stat"><span class="k">${k}</span><span class="v txt">${v}</span></div>`;
+  // Zahl mit Aufschluesselung in einer zweiten, kleineren Zeile
+  const rowSub=(k,v,sub)=>`<div class="stat"><span class="k">${k}</span><span class="v">${v}</span><span class="sub">${sub}</span></div>`;
   const jaNein=b=>b?"ja":"–";
   const schaetz=k=>(o.geschaetzt||[]).includes(k)
     ?' <span class="pill warn" title="Schätzung, noch nicht bestätigt" style="font-size:.6rem">≈ Schätzung</span>':"";
   return `<div class="detgrid">
     <div class="box"><h4>Objekt</h4>
       ${row("Adresse",esc([o.strasse,[o.plz,o.ort].filter(Boolean).join(" ")].filter(Boolean).join(", ")||"–"))}
-      ${row("Lage",esc(o.lage||"–"))}
+      ${o.lage?rowTxt("Lage",esc(o.lage)):row("Lage","–")}
       ${o.link?row("Anzeige",`<a href="${esc(o.link)}" target="_blank" rel="noopener noreferrer">${esc(o.link.replace(/^https?:\/\/(www\.)?/,"").replace(/\/+$/,""))}</a>`):""}
       ${row("Fläche / Zimmer",num(o.wohnflaeche,2)+" m² / "+num(o.zimmer,1))}
       ${row("Etage",esc(o.etage||"–"))}
@@ -1149,7 +1163,9 @@ function paneEck(r){
       ${row("Kaufnebenkosten gesamt",`<span class="val-warn">${eur(r.knk)}</span> (${pct(r.knkSatz*100)})`)}
       ${o.zusatzkosten?row("Zusatzkosten (Küche o.ä.)",eur(o.zusatzkosten)):""}
       ${row("Gesamtinvestition",`<strong>${eur(r.gi)}</strong>`)}
-      ${row("Eigenkapital-Einsatz",r.guthaben>0?`${eur(r.ek)} <span style="opacity:.7">(${eur(r.ekCash)} + ${eur(r.guthaben)} BHW-Guthaben)</span>`:eur(r.ek)+(o.ekAuto?" (= KNK)":""))}
+      ${r.guthaben>0
+        ?rowSub("Eigenkapital-Einsatz",eur(r.ek),`${eur(r.ekCash)} bar + ${eur(r.guthaben)} BHW-Guthaben`)
+        :row("Eigenkapital-Einsatz",eur(r.ek)+(o.ekAuto?" (= KNK)":""))}
       ${(()=>{ const fix=r.bausteineAktiv.filter(x=>!x.haupt);
         return fix.length
           ? row("Darlehen "+esc(r.hauptB?r.hauptB.name:"Haupt"),eur(r.darlehen))
