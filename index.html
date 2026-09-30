@@ -447,14 +447,14 @@ const clone=o=>JSON.parse(JSON.stringify(o));
 
 /* ---------- Rechenbasis ---------- */
 const BASIS_DEF={
-  zins:3.8, tilgung:2.0, zinsbindung:10, anschlusszins:5.0,
-  steuersatz:44, mietausfall:2, ihRuecklage:10,
+  zins:4.3, tilgung:2.0, zinsbindung:10, anschlusszins:5.0,
+  steuersatz:44, mietausfall:2, ihRuecklage:14,
   grest:3.5, notar:1.5, grundbuch:0.5,
   mietsteigerung:2, kostensteigerung:2, wertsteigerung:2,
   depotRendite:6, horizont:10
 };
 const BASIS_KNOBS=[
-  {k:"zins",l:"Sollzins",u:"%",s:.1,t:"Bauzinsen 07/2026: 3,4–3,9 % bei 10 J Bindung. Bei ~100 % Beleihung oberes Ende."},
+  {k:"zins",l:"Sollzins",u:"%",s:.1,t:"Bauzinsen 09/2026: Topkondition ~4,0 % bei 10 J Bindung, 4,0–4,5 % bei 80–90 % Beleihung einer Kapitalanlage."},
   {k:"tilgung",l:"Tilgung",u:"%",s:.5},
   {k:"steuersatz",l:"Grenzsteuer",u:"%",s:1,t:"44 % real (42 % + 8 % KiSt Bayern, kein Soli) — nicht die 48 % der Excel-Tools."},
   {k:"depotRendite",l:"Depot p.a.",u:"%",s:.5,t:"Vergleichsanlage. Bestimmt die Hürde, die das Objekt schlagen muss."},
@@ -464,7 +464,7 @@ const BASIS_KNOBS=[
   {k:"zinsbindung",l:"Bindung",u:"J",s:1},
   {k:"anschlusszins",l:"Anschluss",u:"%",s:.25},
   {k:"mietsteigerung",l:"Miete p.a.",u:"%",s:.5},
-  {k:"ihRuecklage",l:"IH-Rückl.",u:"€/m²a",s:1,t:"Eigene Rücklage fürs Sondereigentum, zusätzlich zur WEG-Rücklage."},
+  {k:"ihRuecklage",l:"IH-Rückl.",u:"€/m²a",s:1,t:"Eigene Rücklage fürs Sondereigentum (Bad, Küche, Böden, Therme), zusätzlich zur WEG-Rücklage. Neubau ~8, Bestand ab 40 Jahren 12–15 €/m²a."},
   {k:"mietausfall",l:"Ausfall",u:"%",s:.5},
   {k:"grest",l:"GrESt",u:"%",s:.5}
 ];
@@ -496,7 +496,7 @@ const PROFIL_FLD=[
 /* ---------- Objekt-Vorlage ---------- */
 const OBJ_DEF=()=>({
   id:uid(), name:"Neues Objekt", strasse:"", plz:"", ort:"Freising", lage:"", link:"", status:"pruefen",
-  kaufpreis:250000, stellplatzpreis:0, zusatzkosten:0, provision:3.57,
+  kaufpreis:250000, stellplatzpreis:0, stellplatzTG:false, zusatzkosten:0, provision:3.57,
   wohnflaeche:60, zimmer:2, etage:"", baujahr:null, sanierung:null, einheiten:null, mea:null,
   energieklasse:"", energiebedarf:null, heizung:"", aufzug:false, balkon:false, stellplatz:false,
   hausgeld:0, hausgeldNU:0, verwaltung:30, ruecklageWEG:null,
@@ -615,13 +615,19 @@ function basis(o,g){
   const annuitaet=(hauptB?bausteinRateM(hauptB,darlehen):0)*12;  // Hauptdarlehens-Rate, jährlich
   const zusatzRateM=fix.reduce((s,b)=>s+bausteinRateM(b),0);     // Summe der Fix-Bausteine, monatlich
   const zinsJ1=darlehen*hZins/100 + fix.reduce((s,b)=>s+(+b.betrag||0)*(+b.zins||0)/100,0); // ges. absetzbarer Zins Jahr 1
-  // Außenstellplatz = Grund und Boden, nicht abschreibbar
-  const bauAnteil=kpGesamt>0?((+o.kaufpreis||0)/kpGesamt):1;
+  /* Stellplatz: Ein Tiefgaragen- oder Garagenplatz ist Gebäude und wird wie die Wohnung
+     abgeschrieben. Nur ein Außenstellplatz ist Grund und Boden und fällt aus der AfA-Basis.
+     Deshalb ein Schalter am Objekt statt einer festen Annahme. */
+  const spTG=!!o.stellplatzTG;
+  const bauAnteil=(spTG||kpGesamt<=0)?1:((+o.kaufpreis||0)/kpGesamt);
   const afaSatz=afaSatzFor(o);
   const afaBasis=(gi-(+o.zusatzkosten||0))*bauAnteil*(+o.gebaeudeanteil||0)/100;
   const afa=afaBasis*afaSatz/100;
+  // Was der Stellplatz-Typ jährlich wert ist — nur zur Anzeige, nicht Teil der Rechnung
+  const afaSpDelta=kpGesamt>0?(gi-(+o.zusatzkosten||0))*((+o.stellplatzpreis||0)/kpGesamt)
+                              *(+o.gebaeudeanteil||0)/100*afaSatz/100:0;
   return {kpGesamt,knk,knkSatz,gi,kalt,miete,marktMiete,jahresmiete,hgNU,eigeneIH,ausfall,
-          nettoMiete,ek,ekCash,darlehen,schuldGesamt,zinsJ1,annuitaet,afa,afaSatz,afaBasis,spm,
+          nettoMiete,ek,ekCash,darlehen,schuldGesamt,zinsJ1,annuitaet,afa,afaSatz,afaBasis,spTG,afaSpDelta,spm,
           bausteine,bausteineAktiv:aktiv,hauptB,hZins,hTilg,guthaben,fixSumme,zusatzRateM};
 }
 
@@ -1151,11 +1157,11 @@ function paneEck(r){
       ${row("Einheiten im Haus",o.einheiten?o.einheiten:"unbekannt")}
       ${row("Energie",esc(o.energieklasse||"?")+(o.energiebedarf?" · "+num(o.energiebedarf,1)+" kWh/m²a":""))}
       ${row("Heizung",esc(o.heizung||"–"))}
-      ${row("Aufzug / Balkon / Stellplatz",jaNein(o.aufzug)+" / "+jaNein(o.balkon)+" / "+jaNein(o.stellplatz))}
+      ${row("Aufzug / Balkon / Stellplatz",jaNein(o.aufzug)+" / "+jaNein(o.balkon)+" / "+jaNein(o.stellplatz)+(o.stellplatz&&o.stellplatzTG?" (Tiefgarage)":""))}
     </div>
     <div class="box"><h4>Kaufpreis &amp; Nebenkosten</h4>
       ${row("Kaufpreis Wohnung",eur(o.kaufpreis))}
-      ${o.stellplatzpreis?row("Stellplatz",eur(o.stellplatzpreis)):""}
+      ${o.stellplatzpreis?row("Stellplatz",eur(o.stellplatzpreis)+(o.stellplatzTG?" · Tiefgarage":" · Außenstellplatz")):""}
       ${row("€/m²",eur(r.qm))}
       ${row("Grunderwerbsteuer "+num(S.basis.grest,1)+" %",eur(r.kpGesamt*S.basis.grest/100))}
       ${row("Notar + Grundbuch "+num(S.basis.notar+S.basis.grundbuch,1)+" %",eur(r.kpGesamt*(S.basis.notar+S.basis.grundbuch)/100))}
@@ -1197,7 +1203,13 @@ function paneEck(r){
       <p class="note" style="margin-top:8px">Rücklagenzuführung ist erst bei Verausgabung Werbungskosten — hier
       nur die Verwaltungskosten (${eur(o.verwaltung)}/M) angesetzt.
       ${r.afaSatz===2.5?"<br><strong>Baujahr vor 1925 → 2,5 % AfA</strong> (§ 7 Abs. 4 Nr. 2b EStG).":""}
-      ${o.stellplatzpreis?"<br>Außenstellplatz ist Grund und Boden und nicht abschreibbar — aus der AfA-Basis herausgerechnet.":""}</p>
+      ${!o.stellplatzpreis?"":o.stellplatzTG
+        ?`<br>Der Stellplatz ist als <strong>Tiefgarage/Garage</strong> erfasst: Gebäude, deshalb voll in der AfA-Basis
+          (${eur(r.afaSpDelta)}/a AfA mehr als ein Außenstellplatz). Aufteilung Grund/Gebäude gehört in den Kaufvertrag —
+          offener Punkt für den Steuerberater.`
+        :`<br>Der Stellplatz ist als <strong>Außenstellplatz</strong> erfasst: Grund und Boden, nicht abschreibbar
+          (aus der AfA-Basis herausgerechnet, kostet ${eur(r.afaSpDelta)}/a AfA). Bei einem TG-Platz den Schalter
+          im Bearbeiten-Dialog setzen.`}</p>
     </div>
   </div>`;
 }
@@ -1677,6 +1689,10 @@ function openObjDialog(o){
         <label class="fld"><span>Eigener Zielpreis €</span><input name="zielpreisManuell" type="text" inputmode="decimal" ${v("zielpreisManuell")}></label>
       </div>
       <label class="fld" style="margin-top:9px;flex-direction:row;align-items:center;gap:7px">
+        <input type="checkbox" name="stellplatzTG" style="width:auto" ${d.stellplatzTG?"checked":""}>
+        <span>Stellplatz ist Tiefgarage oder Garage → wird mitabgeschrieben (aus = Außenstellplatz, Grund und Boden)</span>
+      </label>
+      <label class="fld" style="margin-top:9px;flex-direction:row;align-items:center;gap:7px">
         <input type="checkbox" name="ekAuto" style="width:auto" ${d.ekAuto?"checked":""}>
         <span>Eigenkapital = Kaufnebenkosten (sonst Betrag rechts)</span>
         <input name="ekEinsatz" type="text" inputmode="decimal" ${v("ekEinsatz")} style="max-width:130px">
@@ -1712,7 +1728,7 @@ function openObjDialog(o){
         "sanierung","einheiten","mea","energiebedarf","hausgeld","hausgeldNU","verwaltung","ruecklageWEG",
         "istMiete","stellplatzMiete","marktmieteQm","gebaeudeanteil","ekEinsatz","zielpreisManuell"];
       const txtF=["name","strasse","plz","ort","lage","link","status","etage","energieklasse","heizung","mietmodell"];
-      const boolF=["vermietet","aufzug","balkon","stellplatz","ekAuto"];
+      const boolF=["vermietet","aufzug","balkon","stellplatz","stellplatzTG","ekAuto"];
       const t=neu?OBJ_DEF():S.objekte.find(x=>x.id===o.id);
       txtF.forEach(k=>{ if(g(k)) t[k]=g(k).value.trim(); });
       // Unverständliches nicht stillschweigend zu 0 machen: alten Wert behalten und sagen, welches Feld klemmt.
@@ -1883,7 +1899,8 @@ function exportMd(){
     L.push(`| Miete | ${o.vermietet?"Ist "+eur(k.kalt):"Markt "+eur(k.kalt)}${schaetzMd(o.vermietet?"istMiete":"marktmieteQm")}${k.spm?" + "+eur(k.spm)+" Stellplatz":""} = ${eur(k.miete)}/M |`);
     L.push(`| Kaufnebenkosten | ${eur(k.knk)} (${pct(k.knkSatz*100)}) → Gesamtinvestition ${eur(k.gi)} |`);
     L.push(`| Faktor / Bruttorendite / Nettorendite | ${num(k.faktorKP,1)} / ${pct(k.brutto)} / ${pct(k.netto)} |`);
-    L.push(`| AfA | ${num(k.afaSatz,1)} % auf ${eur(k.afaBasis)} = ${eur(k.afa)}/a |`);
+    L.push(`| AfA | ${num(k.afaSatz,1)} % auf ${eur(k.afaBasis)} = ${eur(k.afa)}/a${
+      o.stellplatzpreis?(o.stellplatzTG?" · TG-Platz mitabgeschrieben":" · Außenstellplatz nicht abschreibbar"):""} |`);
     L.push(`| **Cashflow nach Steuern** | **${eurM(k.cfSt)}/M** |`);
     L.push(`| Break-even / Depot-Hürde | ${pct(k.breakEven,2)} p.a. / ${pct(k.huerde,2)} p.a. |`,"");
     if(o.staerken.length){L.push("**Spricht dafür**",""); o.staerken.forEach(s=>L.push(`- ${s}`)); L.push("");}
