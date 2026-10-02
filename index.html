@@ -447,7 +447,7 @@ const clone=o=>JSON.parse(JSON.stringify(o));
 
 /* ---------- Rechenbasis ---------- */
 const BASIS_DEF={
-  zins:4.3, tilgung:2.0, zinsbindung:10, anschlusszins:5.0,
+  zins:4.3, tilgung:2.0, zinsbindung:10, anschlusszins:5.64,
   steuersatz:44, mietausfall:2, ihRuecklage:14,
   grest:3.5, notar:1.5, grundbuch:0.5,
   mietsteigerung:2, kostensteigerung:2, wertsteigerung:2,
@@ -462,7 +462,7 @@ const BASIS_KNOBS=[
   {k:"horizont",l:"Horizont",u:"J",s:1},
   {sep:1},
   {k:"zinsbindung",l:"Bindung",u:"J",s:1},
-  {k:"anschlusszins",l:"Anschluss",u:"%",s:.25},
+  {k:"anschlusszins",l:"Anschluss",u:"%",s:.25,t:"Zins nach Ablauf der Bindung. 5,64 % = der Stresszins, mit dem die Sparkasse die Tragfähigkeit selbst prüft — ehrlicher als ein knapp über dem Startzins liegender Wert."},
   {k:"mietsteigerung",l:"Miete p.a.",u:"%",s:.5},
   {k:"ihRuecklage",l:"IH-Rückl.",u:"€/m²a",s:1,t:"Eigene Rücklage fürs Sondereigentum (Bad, Küche, Böden, Therme), zusätzlich zur WEG-Rücklage. Neubau ~8, Bestand ab 40 Jahren 12–15 €/m²a."},
   {k:"mietausfall",l:"Ausfall",u:"%",s:.5},
