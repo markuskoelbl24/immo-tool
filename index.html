@@ -501,7 +501,7 @@ const OBJ_DEF=()=>({
   energieklasse:"", energiebedarf:null, heizung:"", aufzug:false, balkon:false, stellplatz:false,
   hausgeld:0, hausgeldNU:0, verwaltung:30, ruecklageWEG:null,
   vermietet:false, istMiete:0, stellplatzMiete:0, marktmieteQm:14, mietmodell:"markt",
-  gebaeudeanteil:70, ekEinsatz:null, ekAuto:true,
+  gebaeudeanteil:70, afaSatzManuell:null, ekEinsatz:null, ekAuto:true,
   zielpreisManuell:null,
   bausteine:[
     {key:"bhw",name:"BHW",on:false,haupt:false,betrag:null,zins:null,tilgung:null,rate:null,laufzeit:null},
@@ -524,7 +524,14 @@ const STATUS={
 };
 
 /* ================= RECHENKERN ================= */
-function afaSatzFor(o){ return (o.baujahr && o.baujahr<1925)?2.5:2.0; }
+function afaSatzFor(o){
+  // Ein Gutachten nach § 7 Abs. 4 S. 2 EStG schlaegt das Baualter: nachgewiesene kuerzere
+  // Restnutzungsdauer gilt statt der gesetzlichen 33/50/40 Jahre. Finanzaemter pruefen das
+  // streng, aber es faellt mitunter guenstiger aus als das Baujahr vermuten laesst.
+  const m=+o.afaSatzManuell;
+  if(m>0) return m;
+  return (o.baujahr && o.baujahr<1925)?2.5:2.0;
+}
 
 /* Finanzierungsbausteine: o.bausteine = [{key,name,on,haupt,betrag,zins,tilgung,rate,laufzeit}].
    - haupt:true -> "Restfinanzierer": Betrag = Gesamtinvestition - EK - Summe der übrigen Bausteine.
@@ -641,6 +648,10 @@ function kennzahlen(o,g){
   const stErg=b.jahresmiete-(+o.verwaltung||0)*12-b.zinsJ1-b.afa;
   const steuer=stErg*(+g.steuersatz||0)/100;
   const cfSt=cfOp-steuer/12;
+  // Tilgung = Gesamtrate minus Gesamtzins. `echt` schreibt sie gut, weil sie Umschichtung
+  // ist und kein Verlust — die dritte Lesart von "draufzahlen" (wissen.md).
+  const tilgungM=(b.annuitaet/12+b.zusatzRateM)-b.zinsJ1/12;
+  const cfEcht=cfSt+tilgungM;
   const hebel=netto-(+g.zins||0);
   // Potenzial bei Marktmiete
   let cfPot=NaN,faktorPot=NaN;
@@ -652,7 +663,7 @@ function kennzahlen(o,g){
     cfPot=cfOpP-stP/12; faktorPot=bp.kpGesamt/bp.jahresmiete;
   }
   return {...b,faktorKP,faktorGI,brutto,netto,cfOp,steuer,cfSt,hebel,cfPot,faktorPot,
-          steuerMonat:-steuer/12};
+          tilgungM,cfEcht,steuerMonat:-steuer/12};
 }
 
 /* Tilgungsplan, monatlich gerechnet, jährlich berichtet */
@@ -1048,7 +1059,11 @@ const COLS=[
   {k:"faktorKP",l:"Faktor",n:1,f:v=>num(v,1),c:v=>v<=25?"good":v<=30?"warn":"bad"},
   {k:"netto",l:"Netto-Rend.",n:1,f:v=>pct(v),c:(v,k)=>v>=S.basis.zins?"good":v>=S.basis.zins-1?"warn":"bad"},
   {k:"cfSt",l:"CF n. St.",n:1,f:v=>eurM(v)+"/M",c:v=>v>=0?"good":v>=-450?"warn":"bad"},
-  {k:"huerde",l:"Depot-Hürde",n:1,f:v=>pct(v,1)+" p.a.",c:v=>v<=1?"good":v<=1.6?"warn":"bad"},
+  {k:"cfEcht",l:"echt",n:1,f:v=>eurM(v)+"/M",c:v=>v>=0?"good":v>=-200?"warn":"bad"},
+  // Gruen/gelb/rot richten sich nach der eigenen Wertsteigerungsannahme, nicht nach festen
+  // Schwellen: die Frage ist "schafft das Objekt die Wertsteigerung, mit der ich rechne?".
+  {k:"huerde",l:"Depot-Hürde",n:1,f:v=>pct(v,1)+" p.a.",
+   c:v=>{const w=+S.basis.wertsteigerung||2; return v<=w?"good":v<=w*1.25?"warn":"bad";}},
   {k:"status",l:"Status"}
 ];
 function kzAlle(){
@@ -1193,7 +1208,9 @@ function paneEck(r){
       ${row("Hebel (Netto − Zins)",`<span class="${r.hebel>=0?"val-good":"val-bad"}">${(r.hebel>=0?"+":"")+num(r.hebel,2)} pp</span>`)}
     </div>
     <div class="box"><h4>Steuer &amp; Abschreibung</h4>
-      ${row("AfA-Satz",`${num(r.afaSatz,1)} %`+(r.afaSatz===2.5?' <span class="pill good">vor 1925</span>':""))}
+      ${row("AfA-Satz",`${num(r.afaSatz,1)} %`+(+o.afaSatzManuell>0
+        ?' <span class="pill good">Gutachten</span>'
+        :r.afaSatz===2.5?' <span class="pill good">vor 1925</span>':""))}
       ${row("Gebäudeanteil",num(o.gebaeudeanteil,0)+" %")}
       ${row("AfA-Bemessungsgrundlage",eur(r.afaBasis))}
       ${row("AfA pro Jahr",`<span class="val-good">${eur(r.afa)}</span>`)}
@@ -1202,7 +1219,12 @@ function paneEck(r){
       ${row("Steuererstattung",`<span class="val-good">${eurM(r.steuerMonat)}/M</span>`)}
       <p class="note" style="margin-top:8px">Rücklagenzuführung ist erst bei Verausgabung Werbungskosten — hier
       nur die Verwaltungskosten (${eur(o.verwaltung)}/M) angesetzt.
-      ${r.afaSatz===2.5?"<br><strong>Baujahr vor 1925 → 2,5 % AfA</strong> (§ 7 Abs. 4 Nr. 2b EStG).":""}
+      ${+o.afaSatzManuell>0
+        ?`<br><strong>${num(r.afaSatz,1)} % per Gutachten</strong> (§ 7 Abs. 4 S. 2 EStG, Restnutzungsdauer
+          ${num(100/r.afaSatz,0)} Jahre) statt ${(o.baujahr&&o.baujahr<1925)?"2,5":"2,0"} % nach Baujahr.
+          Gilt nur beim Halten über die Zehnjahresfrist — bei früherem Verkauf kommt die höhere AfA
+          über den niedrigeren Buchwert zurück (§ 23 EStG).`
+        :r.afaSatz===2.5?"<br><strong>Baujahr vor 1925 → 2,5 % AfA</strong> (§ 7 Abs. 4 Nr. 2b EStG).":""}
       ${!o.stellplatzpreis?"":o.stellplatzTG
         ?`<br>Der Stellplatz ist als <strong>Tiefgarage/Garage</strong> erfasst: Gebäude, deshalb voll in der AfA-Basis
           (${eur(r.afaSpDelta)}/a AfA mehr als ein Außenstellplatz). Aufteilung Grund/Gebäude gehört in den Kaufvertrag —
@@ -1235,6 +1257,8 @@ function paneCf(r){
         ${line("<strong>= CF operativ</strong>","<strong>"+eurM(r.cfOp)+"</strong>",r.cfOp<0?"val-bad":"val-good")}
         ${line("+ Steuererstattung","+"+eurM(r.steuerMonat),"val-good")}
         ${line("<strong>= CF nach Steuern</strong>","<strong>"+eurM(r.cfSt)+"</strong>",r.cfSt<0?"val-bad":"val-good")}
+        ${line("+ Tilgung (Umschichtung)","+"+eurM(r.tilgungM),"val-good")}
+        ${line("<strong>= echt</strong>","<strong>"+eurM(r.cfEcht)+"</strong>",r.cfEcht<0?"val-bad":"val-good")}
         ${isFinite(r.cfPot)?line("CF bei Marktmiete",eurM(r.cfPot),"val-warn"):""}
       </tbody></table>
       <p class="note" style="margin-top:8px">Davon ${eur(r.annuitaet/12*(r.hTilg/(r.hZins+r.hTilg||1))+r.bausteineAktiv.filter(x=>!x.haupt).reduce((s,x)=>s+Math.max(0,bausteinRateM(x)-(+x.betrag||0)*(+x.zins||0)/100/12),0))}/M Tilgung —
@@ -1686,6 +1710,7 @@ function openObjDialog(o){
         <label class="fld"><span>Provision %</span><input name="provision" type="text" inputmode="decimal" ${v("provision")}></label>
         <label class="fld"><span>Zusatzkosten € (Küche o.ä.)</span><input name="zusatzkosten" type="text" inputmode="decimal" ${v("zusatzkosten")}></label>
         <label class="fld"><span>Gebäudeanteil % (AfA)</span><input name="gebaeudeanteil" type="text" inputmode="decimal" ${v("gebaeudeanteil")}></label>
+        <label class="fld"><span>AfA % lt. Gutachten</span><input name="afaSatzManuell" type="text" inputmode="decimal" placeholder="leer = nach Baujahr" ${v("afaSatzManuell")}></label>
         <label class="fld"><span>Eigener Zielpreis €</span><input name="zielpreisManuell" type="text" inputmode="decimal" ${v("zielpreisManuell")}></label>
       </div>
       <label class="fld" style="margin-top:9px;flex-direction:row;align-items:center;gap:7px">
@@ -1726,7 +1751,7 @@ function openObjDialog(o){
       const g=n=>body.querySelector(`[name="${n}"]`);
       const numF=["kaufpreis","stellplatzpreis","provision","zusatzkosten","wohnflaeche","zimmer","baujahr",
         "sanierung","einheiten","mea","energiebedarf","hausgeld","hausgeldNU","verwaltung","ruecklageWEG",
-        "istMiete","stellplatzMiete","marktmieteQm","gebaeudeanteil","ekEinsatz","zielpreisManuell"];
+        "istMiete","stellplatzMiete","marktmieteQm","gebaeudeanteil","afaSatzManuell","ekEinsatz","zielpreisManuell"];
       const txtF=["name","strasse","plz","ort","lage","link","status","etage","energieklasse","heizung","mietmodell"];
       const boolF=["vermietet","aufzug","balkon","stellplatz","stellplatzTG","ekAuto"];
       const t=neu?OBJ_DEF():S.objekte.find(x=>x.id===o.id);
@@ -1899,7 +1924,7 @@ function exportMd(){
     L.push(`| Miete | ${o.vermietet?"Ist "+eur(k.kalt):"Markt "+eur(k.kalt)}${schaetzMd(o.vermietet?"istMiete":"marktmieteQm")}${k.spm?" + "+eur(k.spm)+" Stellplatz":""} = ${eur(k.miete)}/M |`);
     L.push(`| Kaufnebenkosten | ${eur(k.knk)} (${pct(k.knkSatz*100)}) → Gesamtinvestition ${eur(k.gi)} |`);
     L.push(`| Faktor / Bruttorendite / Nettorendite | ${num(k.faktorKP,1)} / ${pct(k.brutto)} / ${pct(k.netto)} |`);
-    L.push(`| AfA | ${num(k.afaSatz,1)} % auf ${eur(k.afaBasis)} = ${eur(k.afa)}/a${
+    L.push(`| AfA | ${num(k.afaSatz,1)} %${+o.afaSatzManuell>0?" (Gutachten)":""} auf ${eur(k.afaBasis)} = ${eur(k.afa)}/a${
       o.stellplatzpreis?(o.stellplatzTG?" · TG-Platz mitabgeschrieben":" · Außenstellplatz nicht abschreibbar"):""} |`);
     L.push(`| **Cashflow nach Steuern** | **${eurM(k.cfSt)}/M** |`);
     L.push(`| Break-even / Depot-Hürde | ${pct(k.breakEven,2)} p.a. / ${pct(k.huerde,2)} p.a. |`,"");
