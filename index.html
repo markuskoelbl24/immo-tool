@@ -1060,10 +1060,7 @@ const COLS=[
   {k:"netto",l:"Netto-Rend.",n:1,f:v=>pct(v),c:(v,k)=>v>=S.basis.zins?"good":v>=S.basis.zins-1?"warn":"bad"},
   {k:"cfSt",l:"CF n. St.",n:1,f:v=>eurM(v)+"/M",c:v=>v>=0?"good":v>=-450?"warn":"bad"},
   {k:"cfEcht",l:"echt",n:1,f:v=>eurM(v)+"/M",c:v=>v>=0?"good":v>=-200?"warn":"bad"},
-  // Gruen/gelb/rot richten sich nach der eigenen Wertsteigerungsannahme, nicht nach festen
-  // Schwellen: die Frage ist "schafft das Objekt die Wertsteigerung, mit der ich rechne?".
-  {k:"huerde",l:"Depot-Hürde",n:1,f:v=>pct(v,1)+" p.a.",
-   c:v=>{const w=+S.basis.wertsteigerung||2; return v<=w?"good":v<=w*1.25?"warn":"bad";}},
+  {k:"huerde",l:"Depot-Hürde",n:1,f:v=>pct(v,1)+" p.a.",c:v=>v<=1?"good":v<=1.6?"warn":"bad"},
   {k:"status",l:"Status"}
 ];
 function kzAlle(){
