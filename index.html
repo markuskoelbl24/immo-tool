@@ -1483,6 +1483,23 @@ function paneFin(r){
         <input type="text" inputmode="decimal" placeholder="Tilgung %" data-bnew="tilgung" style="max-width:96px">
         <button class="tiny primary" data-act="badd" data-id="${o.id}">+ Baustein</button>
       </div>
+      ${(()=>{
+        // Dritter Zustand neben an/aus: Guthaben als Eigenkapital nutzen, Bauspardarlehen nicht.
+        // Technisch ueber betrag=0 — bausteinRateM gibt dann 0 zurueck, das Guthaben haengt nur
+        // am aktiven Baustein. Fuer den Vergleich mit Finanzierungen ohne Bausparvertrag.
+        const bhw=bl.find(x=>x.key==="bhw");
+        if(!bhw||!bhw.on) return "";
+        const nur=(+bhw.betrag||0)===0;
+        const kp=(+o.kaufpreis||0)+(+o.stellplatzpreis||0);
+        const q=kp>0?r.darlehen/kp:0;
+        return `<label class="fld" style="flex-direction:row;align-items:flex-start;gap:8px;margin-top:11px;max-width:560px">
+          <input type="checkbox" ${nur?"checked":""} data-act="bhwnur" data-id="${o.id}" style="width:auto;margin-top:3px">
+          <span style="font-weight:400;line-height:1.4">Nur das <strong>BHW-Guthaben</strong> einsetzen —
+          Bauspardarlehen aus, die Bank stellt die Restsumme.
+          <span class="note" style="display:block;margin-top:3px">Bankdarlehen derzeit <strong>${eur(r.darlehen)}</strong>
+          = ${pct(q*100,1)} vom Kaufpreis — <strong>${q<=0.5?"50":q<=0.7?"70":q<=0.8?"80":q<=0.9?"90":"100"}-%-Band</strong>.
+          Jede Bandstufe kostet Zins, deshalb hängt am Bauspardarlehen mehr als sein eigener Satz.</span></span></label>`;
+      })()}
       <table class="mini kv" style="margin-top:10px;max-width:340px"><tbody>
         <tr><td>Bar-Eigenkapital</td><td class="n"><input type="text" inputmode="decimal" value="${num(r.ekCash,0)}"
           data-bfield="ekcash" data-id="${o.id}" style="width:92px;text-align:right"> €</td></tr>
@@ -1692,6 +1709,13 @@ function bindDetail(){
       const act=b.dataset.act;
       const o=S.objekte.find(x=>x.id===b.dataset.id); if(!o) return;
       if(act==="chk"){ o.fragen[+b.dataset.i].d=b.checked; save(); renderOffen(); renderTable(); return; }
+      if(act==="bhwnur"){
+        ensureBausteine(o);
+        const x=o.bausteine.find(y=>y.key==="bhw");
+        // null statt Festwert: faellt auf das Profil zurueck und folgt spaeteren Aenderungen dort.
+        if(x) x.betrag = b.checked ? 0 : null;
+        save(); rerenderKeepScroll(); return;
+      }
       if(act==="btoggle"){
         ensureBausteine(o);
         const x=o.bausteine.find(y=>y.key===b.dataset.k); if(x) x.on=b.checked;
