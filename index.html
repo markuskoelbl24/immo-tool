@@ -135,6 +135,17 @@ main{padding:20px 0 60px}
   font-size:.72rem;color:var(--ink-2);white-space:normal;overflow-wrap:anywhere;margin-top:2px}
 
 /* meter */
+/* Offene Fragen ueber alle Objekte: aufklappbar je Objekt, Haken wirkt sofort. */
+.offo{border-top:1px solid var(--rule);padding:7px 0}
+.offo:first-child{border-top:0;padding-top:0}
+.offo>button{display:flex;width:100%;align-items:center;gap:7px;background:none;border:0;
+  padding:0;cursor:pointer;color:var(--ink);text-align:left;font-size:.75rem}
+.offo>button .nm{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.offo>button .ar{color:var(--ink-3);font-size:.65rem;flex:none}
+.offo ul{list-style:none;margin:6px 0 0;padding:0}
+.offo li{display:flex;gap:6px;align-items:flex-start;font-size:.7rem;
+  color:var(--ink-2);line-height:1.35;margin-top:5px}
+.offo li input{margin:1px 0 0;flex:none}
 .meter{height:6px;border-radius:3px;background:var(--rule);overflow:hidden;margin-top:5px}
 .meter i{display:block;height:100%;background:var(--accent)}
 .meter.ok i{background:var(--good)} .meter.warn i{background:var(--warn)} .meter.bad i{background:var(--bad)}
@@ -383,6 +394,10 @@ legend{font-size:.68rem;letter-spacing:.08em;text-transform:uppercase;color:var(
       <section class="panel">
         <div class="panel-hd"><h3>Stresstest</h3></div>
         <div class="panel-bd" id="stressBox"></div>
+      </section>
+      <section class="panel">
+        <div class="panel-hd"><h3>Offen zu klären</h3><span id="offenZahl"></span></div>
+        <div class="panel-bd" id="offenBox"></div>
       </section>
     </aside>
 
@@ -1049,6 +1064,44 @@ function renderStress(){
    Über 55 % wird es eng, sobald eine Sonderumlage dazukommt.</p>`;
 }
 
+/* Offene Fragen aller aktiven Objekte an einer Stelle. Die Listen stehen pro Objekt
+   im Bewertung-Tab; von dort ist nicht zu sehen, was insgesamt noch aussteht. */
+function renderOffen(){
+  const box=document.getElementById("offenBox"), zahl=document.getElementById("offenZahl");
+  const aktiv=S.objekte.filter(o=>o.status!=="verworfen"&&o.status!=="weg");
+  const grp=aktiv.map(o=>({o,offen:(o.fragen||[]).map((f,i)=>({f,i})).filter(x=>!x.f.d)}))
+                 .filter(x=>x.offen.length).sort((a,b)=>b.offen.length-a.offen.length);
+  const n=grp.reduce((s,x)=>s+x.offen.length,0);
+  zahl.innerHTML=n?`<span class="pill warn">${n} offen</span>`:`<span class="pill good">erledigt</span>`;
+  if(!n){ box.innerHTML='<p class="note">Bei den aktiven Objekten ist nichts mehr offen. '+
+    'Neue Fragen trägst du je Objekt im Tab „Bewertung“ ein.</p>'; return; }
+  const auf=S.ui.fragenAuf||(S.ui.fragenAuf=[]);
+  box.innerHTML=grp.map(({o,offen})=>{
+    const zu=!auf.includes(o.id);
+    return `<div class="offo">
+      <button data-offtog="${o.id}">
+        <span class="ar">${zu?"▸":"▾"}</span>
+        <span class="nm">${esc(o.name)}</span>
+        <span class="pill ${offen.length>3?"bad":"warn"}">${offen.length}</span>
+      </button>
+      ${zu?"":`<ul>${offen.map(({f,i})=>
+        `<li><input type="checkbox" data-offchk="${o.id}" data-i="${i}">
+           <span>${esc(f.t)}</span></li>`).join("")}</ul>`}
+    </div>`;
+  }).join("");
+}
+document.addEventListener("click",e=>{
+  const b=e.target.closest("[data-offtog]"); if(!b) return;
+  const id=b.dataset.offtog, auf=S.ui.fragenAuf||(S.ui.fragenAuf=[]);
+  const i=auf.indexOf(id); i<0?auf.push(id):auf.splice(i,1);
+  save(); renderOffen();
+});
+document.addEventListener("change",e=>{
+  const c=e.target.closest("[data-offchk]"); if(!c) return;
+  const o=S.objekte.find(x=>x.id===c.dataset.offchk); if(!o) return;
+  o.fragen[+c.dataset.i].d=c.checked; save(); renderOffen(); renderTable();
+});
+
 /* ================= Tabelle ================= */
 const COLS=[
   {k:"ort",l:"Ort"},
@@ -1208,6 +1261,13 @@ function paneEck(r){
       ${row("AfA-Satz",`${num(r.afaSatz,1)} %`+(+o.afaSatzManuell>0
         ?' <span class="pill good">Gutachten</span>'
         :r.afaSatz===2.5?' <span class="pill good">vor 1925</span>':""))}
+      <div class="addrow" style="max-width:300px;margin:2px 0 8px">
+        <input type="text" inputmode="decimal" style="text-align:right"
+          placeholder="leer = ${(o.baujahr&&o.baujahr<1925)?"2,5":"2,0"} % nach Baujahr"
+          value="${+o.afaSatzManuell>0?num(o.afaSatzManuell,1):""}"
+          data-field="afaSatzManuell" data-id="${o.id}">
+        <button class="tiny" data-act="setafa" data-id="${o.id}">rechnen</button>
+      </div>
       ${row("Gebäudeanteil",num(o.gebaeudeanteil,0)+" %")}
       ${row("AfA-Bemessungsgrundlage",eur(r.afaBasis))}
       ${row("AfA pro Jahr",`<span class="val-good">${eur(r.afa)}</span>`)}
@@ -1615,6 +1675,13 @@ function bindDetail(){
         setTimeout(()=>window.print(),50);
         return;
       }
+      if(act==="setafa"){
+        // Gutachten nach § 7 Abs. 4 S. 2 EStG schlaegt das Baualter; leeres Feld = zurueck zum Baujahr.
+        const inp=d.querySelector(`[data-field="afaSatzManuell"][data-id="${o.id}"]`);
+        const v=numDE(inp.value);
+        o.afaSatzManuell=(isFinite(v)&&v>0)?v:null;
+        save(); rerenderKeepScroll(); return;
+      }
       if(act==="setziel"){
         const inp=d.querySelector(`[data-field="zielpreisManuell"][data-id="${o.id}"]`);
         const v=numDE(inp.value); o.zielpreisManuell=isFinite(v)?v:null; save(); renderTable(); return;
@@ -1624,7 +1691,7 @@ function bindDetail(){
       const b=e.target.closest('[data-act]'); if(!b) return;
       const act=b.dataset.act;
       const o=S.objekte.find(x=>x.id===b.dataset.id); if(!o) return;
-      if(act==="chk"){ o.fragen[+b.dataset.i].d=b.checked; save(); renderTable(); return; }
+      if(act==="chk"){ o.fragen[+b.dataset.i].d=b.checked; save(); renderOffen(); renderTable(); return; }
       if(act==="btoggle"){
         ensureBausteine(o);
         const x=o.bausteine.find(y=>y.key===b.dataset.k); if(x) x.on=b.checked;
@@ -1700,7 +1767,7 @@ function openObjDialog(o){
         <label style="display:flex;gap:5px;align-items:center"><input type="checkbox" name="stellplatz" style="width:auto" ${d.stellplatz?"checked":""}> Stellplatz</label>
       </div>
     </fieldset>
-    <fieldset><legend>Preis</legend>
+    <fieldset><legend>Preis &amp; Abschreibung</legend>
       <div class="grid4">
         <label class="fld"><span>Kaufpreis Wohnung €</span><input name="kaufpreis" type="text" inputmode="decimal" ${v("kaufpreis")}></label>
         <label class="fld"><span>Stellplatz-Kaufpreis €</span><input name="stellplatzpreis" type="text" inputmode="decimal" ${v("stellplatzpreis")}></label>
@@ -1963,7 +2030,7 @@ function importJson(){
 
 /* ================= Init ================= */
 function renderAll(full=true){
-  renderBasis(); renderProfil(); renderStress();
+  renderBasis(); renderProfil(); renderStress(); renderOffen();
   if(full) renderFilter();
   renderTable();
   document.getElementById("footNote").innerHTML=
