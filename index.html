@@ -782,7 +782,7 @@ function depotHuerde(o,g){
   const huerde=b.kpGesamt>0?(Math.pow(wertNoetigDepot/b.kpGesamt,1/N)-1)*100:NaN;
   const breakEven=b.kpGesamt>0?(Math.pow(wertNoetigBE/b.kpGesamt,1/N)-1)*100:NaN;
   const wertProg=b.kpGesamt*Math.pow(1+(+g.wertsteigerung||0)/100,N);
-  return {N,eingezahlt,depotNetto,rest,huerde,breakEven,
+  return {N,eingezahlt,depotNetto,rest,huerde,breakEven,wertNoetigDepot,wertNoetigBE,
           saldo:(wertProg-rest)-eingezahlt, tilgung:b.schuldGesamt-rest, wertProg};
 }
 
@@ -1337,6 +1337,20 @@ function paneCf(r){
         ${line("Objektwert bei "+num(g.wertsteigerung,1)+" %/a",eur(d.wertProg))}
         ${line("Saldo bei "+num(g.wertsteigerung,1)+" %/a",eurM(d.saldo),d.saldo>=0?"val-good":"val-bad")}
       </tbody></table>
+      <h4 style="margin-top:13px">Verkauf nach ${d.N} Jahren</h4>
+      <table class="mini"><tbody>
+        ${line("Verkaufspreis für Geld zurück",eur(d.wertNoetigBE))}
+        ${line("<strong>Verkaufspreis = Depot</strong>","<strong>"+eur(d.wertNoetigDepot)+"</strong>",
+          d.huerde<=(+g.wertsteigerung||2)?"val-good":"val-bad")}
+        ${line('<span style="opacity:.7">davon nach Restschuld</span>',
+          '<span style="opacity:.7">'+eur(d.wertNoetigDepot-d.rest)+'</span>')}
+        ${line("bei "+num(g.wertsteigerung,1)+" %/a erreichst du",eur(d.wertProg),
+          d.wertProg>=d.wertNoetigDepot?"val-good":"val-bad")}
+      </tbody></table>
+      <p class="note" style="margin-top:7px">Nach ${d.N} Jahren ist der Veräußerungsgewinn
+      steuerfrei (§ 23 EStG). ⚠️ Bei einem Verkauf <em>vorher</em> wird er voll versteuert —
+      und die AfA hat den Buchwert gesenkt, der Gewinn ist also größer als der reine
+      Preisunterschied. Maklerkosten beim Verkauf sind hier nicht abgezogen.</p>
       <p class="note" style="margin-top:8px">Die Hürde ist die Entscheidungszahl: ab dieser jährlichen
       Wertsteigerung schlägt das Objekt dieselben Beträge im Depot (nach Abgeltungsteuer,
       30 % Teilfreistellung). Freising läuft aktuell seitwärts bis leicht rückläufig.</p>
