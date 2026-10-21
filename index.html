@@ -220,6 +220,17 @@ tr.detail.hidden{display:none}
 .mini{width:100%;min-width:0;font-size:.8rem}
 .mini th,.mini td{padding:4px 6px}
 .mini td.n{white-space:nowrap}   /* Werte nicht umbrechen; Kopfzeilen dürfen */
+.mini th,.mini td{vertical-align:top}   /* sonst steht die Zahl mittig neben mehrzeiligem Text */
+/* Massnahmen-Tabelle: Name darf umbrechen, aber nicht auf Buchstabenbreite schrumpfen.
+   Reicht die Breite nicht, scrollt die .hscroll-Huelle seitlich — wie bei den Bausteinen. */
+.mass-tbl td:first-child,.mass-tbl th:first-child{min-width:150px}
+/* Auf Handybreite passen Name + zwei Preisspannen nicht nebeneinander. Dann faellt die
+   Gesamtspalte weg — entscheidend ist der eigene Anteil, die Summe steht in der Fusszeile. */
+@media (max-width:560px){
+  .mass-tbl th:nth-child(2),.mass-tbl td:nth-child(2){display:none}
+  .mass-tbl td:first-child,.mass-tbl th:first-child{min-width:104px}
+  .mass-tbl th,.mass-tbl td{padding:4px 3px}   /* sonst haengt der Loeschen-Knopf ueber */
+}
 .mini thead th{position:static;background:transparent;border-bottom:1px solid var(--rule-2)}
 .hscroll{overflow-x:auto;scrollbar-width:none}
 .hscroll::-webkit-scrollbar{display:none}
@@ -1593,7 +1604,7 @@ function paneBew(r){
     </div>
     <div class="box narrow"><h4>Sanierungsrisiko der WEG</h4>
       ${mea?"":'<p class="note warnbox">Anzahl der Einheiten fehlt — ohne sie ist der Anteil nicht berechenbar. Unter „Daten ändern“ eintragen.</p>'}
-      <table class="mini"><thead><tr><th>Maßnahme</th><th class="n">gesamt</th><th class="n">dein Anteil</th><th></th></tr></thead><tbody>
+      <div class="hscroll"><table class="mini mass-tbl"><thead><tr><th>Maßnahme</th><th class="n">gesamt</th><th class="n">dein Anteil</th><th></th></tr></thead><tbody>
       ${(o.massnahmen||[]).map((m,i)=>`<tr><td>${esc(m.n)}</td>
         <td class="n"><span class="num">${eur(m.v)}–${eur(m.b)}</span></td>
         <td class="n"><span class="num val-warn">${mea?eur(m.v*mea/100)+"–"+eur(m.b*mea/100):"–"}</span></td>
@@ -1602,14 +1613,14 @@ function paneBew(r){
       ${(o.massnahmen||[]).length?`<tr style="border-top:2px solid var(--rule-2)"><td><strong>Summe</strong></td>
         <td class="n"><span class="num">${eur(sumV)}–${eur(sumB)}</span></td>
         <td class="n"><span class="num val-bad"><strong>${mea?eur(anteilV)+"–"+eur(anteilB):"–"}</strong></span></td><td></td></tr>`:""}
-      </tbody></table>
+      </tbody></table></div>
       <div class="addrow" style="flex-wrap:wrap">
         <input placeholder="Maßnahme" data-m="n" style="min-width:120px">
         <input type="text" inputmode="decimal" placeholder="von €" data-m="v" style="max-width:100px">
         <input type="text" inputmode="decimal" placeholder="bis €" data-m="b" style="max-width:100px">
         <button class="tiny" data-act="addmass" data-id="${o.id}">+</button>
       </div>
-      ${mea?`<p class="note" style="margin-top:8px">Miteigentumsanteil ${num(mea,o.mea?2:1)} %${!o.mea&&o.einheiten?` (geschätzt aus ${o.einheiten} Einheiten)`:""}.
+      ${mea?`<p class="note" style="margin-top:8px">${(o.massnahmen||[]).length?`Gesamtkosten der WEG ${eur(sumV)}–${eur(sumB)}, davon dein `:"Dein "}Miteigentumsanteil ${num(mea,o.mea?2:1)} %${!o.mea&&o.einheiten?` (geschätzt aus ${o.einheiten} Einheiten)`:""}.
         ${deckung!=null?`WEG-Rücklage deckt davon <strong>${eur(deckung)}</strong>.
         ${anteilV&&deckung<anteilV?`<span class="val-bad">Lücke mindestens ${eur(anteilV-deckung)}.</span>`:'<span class="val-good">Rücklage trägt die untere Schätzung.</span>'}`:
         "Rücklagenstand der WEG noch unbekannt."}</p>`:""}
